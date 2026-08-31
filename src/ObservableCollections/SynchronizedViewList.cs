@@ -480,26 +480,28 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
 
                 // update view
                 writableView.SetViewAt(originalIndex, value);
-                lock (gate)
+
+                if (setValue)
                 {
-                    var oldView = listView[listViewIndex];
-                    listView[listViewIndex] = value;
-                    if (deferred != null)
+                    // the Replace of the source updates listView and the visible list, with a notification.
+                    // do not touch listView here, it would be an unnotified change if the source write fails
+                    writableView.SetToSourceCollection(originalIndex, newOriginal);
+                }
+                else
+                {
+                    // the converter rejected the source write, so this is the only notification of the change
+                    lock (gate)
                     {
-                        // never touch the visible list without a notification, the Replace of the source updates it
+                        var oldView = listView[listViewIndex];
+                        listView[listViewIndex] = value;
                         Publish(new CollectionEventDispatcherEventArgs(NotifyCollectionChangedAction.Replace, value, oldView, listViewIndex)
                         {
                             Collection = this,
                             Invoker = raiseChangedEventInvoke,
-                            IsInvokeCollectionChanged = !setValue, // the Replace of the source carries the same content
+                            IsInvokeCollectionChanged = true,
                             IsInvokePropertyChanged = false
                         });
                     }
-                }
-
-                if (setValue)
-                {
-                    writableView.SetToSourceCollection(originalIndex, newOriginal);
                 }
             }
         }
@@ -1160,26 +1162,28 @@ internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollecti
 
                 // update view
                 writableView.SetViewAt(listViewIndex, value);
-                lock (gate)
+
+                if (setValue)
                 {
-                    var oldView = listView[listViewIndex];
-                    listView[listViewIndex] = value;
-                    if (deferred != null)
+                    // the Replace of the source updates listView and the visible list, with a notification.
+                    // do not touch listView here, it would be an unnotified change if the source write fails
+                    writableView.SetToSourceCollection(listViewIndex, newOriginal);
+                }
+                else
+                {
+                    // the converter rejected the source write, so this is the only notification of the change
+                    lock (gate)
                     {
-                        // never touch the visible list without a notification, the Replace of the source updates it
+                        var oldView = listView[listViewIndex];
+                        listView[listViewIndex] = value;
                         Publish(new CollectionEventDispatcherEventArgs(NotifyCollectionChangedAction.Replace, value, oldView, listViewIndex)
                         {
                             Collection = this,
                             Invoker = raiseChangedEventInvoke,
-                            IsInvokeCollectionChanged = !setValue, // the Replace of the source carries the same content
+                            IsInvokeCollectionChanged = true,
                             IsInvokePropertyChanged = false
                         });
                     }
-                }
-
-                if (setValue)
-                {
-                    writableView.SetToSourceCollection(listViewIndex, newOriginal);
                 }
             }
         }
