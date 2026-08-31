@@ -30,6 +30,11 @@ namespace ObservableCollections.Internal
         readonly List<TView> published;
         readonly Queue<PendingChange> pending = new();
 
+        // each pending change gets an increasing sequence and they are applied in that order,
+        // so an event is still pending exactly while its sequence is above the applied one
+        long lastEnqueuedSequence;
+        long lastAppliedSequence;
+
         public DeferredViewList(IEnumerable<TView> initialItems)
         {
             published = initialItems.ToList();
@@ -49,6 +54,7 @@ namespace ObservableCollections.Internal
 
         public void Enqueue(CollectionEventDispatcherEventArgs ev, TView[]? resetSnapshot)
         {
+            ev.DeferredSequence = ++lastEnqueuedSequence;
             pending.Enqueue(new PendingChange(ev, resetSnapshot));
         }
 
@@ -70,29 +76,19 @@ namespace ObservableCollections.Internal
         /// </summary>
         public bool TryApplyNext(CollectionEventDispatcherEventArgs ev, out CollectionEventDispatcherEventArgs applied)
         {
-            if (!IsPending(ev))
+            // an event is pending exactly while it is newer than the last applied one. an event that was
+            // never enqueued has a sequence of 0, which is never newer, so it is reported as applied.
+            if (ev.DeferredSequence <= lastAppliedSequence)
             {
                 applied = null!;
                 return false;
             }
 
             var change = pending.Dequeue();
+            lastAppliedSequence = change.Args.DeferredSequence;
             Apply(change);
             applied = change.Args;
             return true;
-        }
-
-        bool IsPending(CollectionEventDispatcherEventArgs ev)
-        {
-            foreach (var change in pending)
-            {
-                if (ReferenceEquals(change.Args, ev))
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         /// <summary>

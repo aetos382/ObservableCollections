@@ -76,6 +76,9 @@ namespace ObservableCollections
         public bool IsInvokePropertyChanged { get; set; }
         internal Action<CollectionEventDispatcherEventArgs> Invoker { get; set; } = default!;
 
+        /// <summary>Set when the event is enqueued into DeferredViewList, to tell whether it is still pending.</summary>
+        internal long DeferredSequence { get; set; }
+
         public void Invoke()
         {
             Invoker.Invoke(this);
