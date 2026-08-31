@@ -435,19 +435,27 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
 
                 var (originalValue, _) = writableView!.GetAt(originalIndex);
 
+                var setValue = true;
+                var newOriginal = converter!(value, originalValue, ref setValue);
+
                 // update view
                 writableView.SetViewAt(originalIndex, value);
                 lock (gate)
                 {
+                    var oldView = listView[listViewIndex];
                     listView[listViewIndex] = value;
                     if (deferred != null)
                     {
-                        deferred[index] = value;
+                        // never touch the visible list without a notification, the Replace of the source updates it
+                        Publish(new CollectionEventDispatcherEventArgs(NotifyCollectionChangedAction.Replace, value, oldView, listViewIndex)
+                        {
+                            Collection = this,
+                            Invoker = raiseChangedEventInvoke,
+                            IsInvokeCollectionChanged = !setValue, // the Replace of the source carries the same content
+                            IsInvokePropertyChanged = false
+                        });
                     }
                 }
-
-                var setValue = true;
-                var newOriginal = converter!(value, originalValue, ref setValue);
 
                 if (setValue)
                 {
@@ -1068,19 +1076,27 @@ internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollecti
 
                 var (originalValue, _) = writableView!.GetAt(listViewIndex);
 
+                var setValue = true;
+                var newOriginal = converter!(value, originalValue, ref setValue);
+
                 // update view
                 writableView.SetViewAt(listViewIndex, value);
                 lock (gate)
                 {
+                    var oldView = listView[listViewIndex];
                     listView[listViewIndex] = value;
                     if (deferred != null)
                     {
-                        deferred[index] = value;
+                        // never touch the visible list without a notification, the Replace of the source updates it
+                        Publish(new CollectionEventDispatcherEventArgs(NotifyCollectionChangedAction.Replace, value, oldView, listViewIndex)
+                        {
+                            Collection = this,
+                            Invoker = raiseChangedEventInvoke,
+                            IsInvokeCollectionChanged = !setValue, // the Replace of the source carries the same content
+                            IsInvokePropertyChanged = false
+                        });
                     }
                 }
-
-                var setValue = true;
-                var newOriginal = converter!(value, originalValue, ref setValue);
 
                 if (setValue)
                 {

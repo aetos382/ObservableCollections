@@ -16,6 +16,12 @@ public class DeferredNotificationTest
         return int.Parse(newView.Substring(1));
     }
 
+    static int RejectOriginal(string newView, int original, ref bool setValue)
+    {
+        setValue = false;
+        return original;
+    }
+
     /// <summary>
     /// フィルタを持たないビュー (NonFilteredSynchronizedViewList) でも同じ保証が必要。
     /// </summary>
@@ -172,6 +178,70 @@ public class DeferredNotificationTest
 
         tracker.Violations.Should().BeEmpty();
         notify.Should().Equal(new[] { "$0", "$1", "$9", "$2", "$3" });
+    }
+
+    /// <summary>
+    /// 遅延中に位置指定書き込みをしても、購読者から見える内容が通知から再構築した内容と
+    /// 一致し続けること、および通知が余分に増えないことを確認する。
+    /// </summary>
+    [Fact]
+    public void SetDuringPendingNotification()
+    {
+        var dispatcher = new QueuedCollectionEventDispatcher();
+
+        var list = new ObservableList<int>();
+        list.Add(1);
+        list.Add(2);
+        list.Add(3);
+
+        using var notify = list.ToWritableNotifyCollectionChanged(x => $"${x}", ToOriginal, dispatcher);
+
+        var tracker = new NotifyCollectionChangedContractTracker<string>(notify);
+
+        Task.Run(() => list.Insert(0, 0)).Wait();
+
+        // 見えている ["$1", "$2", "$3"] の [1]、つまり "$2" を差し替える。
+        notify[1] = "$9";
+
+        list.Should().Equal(new[] { 0, 1, 9, 3 });
+
+        dispatcher.Pump();
+
+        tracker.Violations.Should().BeEmpty();
+        notify.Should().Equal(new[] { "$0", "$1", "$9", "$3" });
+
+        // ソース由来の Replace と二重に通知しない。
+        tracker.Actions.Should().Equal(new[] { NotifyCollectionChangedAction.Add, NotifyCollectionChangedAction.Replace });
+    }
+
+    /// <summary>
+    /// converter がソースへの書き込みを拒否してソース由来の Replace 通知が出ない場合も、
+    /// 購読者から見える内容が通知から再構築した内容と一致し続けることを確認する。
+    /// </summary>
+    [Fact]
+    public void SetRejectedByConverterDuringPendingNotification()
+    {
+        var dispatcher = new QueuedCollectionEventDispatcher();
+
+        var list = new ObservableList<int>();
+        list.Add(1);
+        list.Add(2);
+
+        using var notify = list.ToWritableNotifyCollectionChanged(x => $"${x}", RejectOriginal, dispatcher);
+
+        var tracker = new NotifyCollectionChangedContractTracker<string>(notify);
+
+        Task.Run(() => list.Insert(0, 0)).Wait();
+
+        notify[1] = "$9";
+
+        list.Should().Equal(new[] { 0, 1, 2 });
+
+        dispatcher.Pump();
+
+        tracker.Violations.Should().BeEmpty();
+        notify.Should().Equal(new[] { "$0", "$1", "$9" });
+        tracker.Actions.Should().Equal(new[] { NotifyCollectionChangedAction.Add, NotifyCollectionChangedAction.Replace });
     }
 
     /// <summary>

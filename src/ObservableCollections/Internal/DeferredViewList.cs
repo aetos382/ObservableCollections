@@ -27,11 +27,7 @@ namespace ObservableCollections.Internal
 
         public int Count => published.Count;
 
-        public TView this[int index]
-        {
-            get => published[index];
-            set => published[index] = value;
-        }
+        public TView this[int index] => published[index];
 
         public IEnumerable<TView> Items => published;
 
