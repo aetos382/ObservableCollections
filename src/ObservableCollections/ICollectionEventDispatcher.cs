@@ -12,7 +12,7 @@ namespace ObservableCollections
 
     public class SynchronizationContextCollectionEventDispatcher : ICollectionEventDispatcher
     {
-        static readonly Lazy<ICollectionEventDispatcher> current = new Lazy<ICollectionEventDispatcher>(() =>
+        static readonly Lazy<ICollectionEventDispatcher> current = new(() =>
         {
             var current = SynchronizationContext.Current;
             if (current == null)
@@ -23,7 +23,7 @@ namespace ObservableCollections
             return new SynchronizationContextCollectionEventDispatcher(current);
         });
 
-        public static readonly ICollectionEventDispatcher Current = current.Value;
+        public static ICollectionEventDispatcher Current => current.Value;
 
         readonly SynchronizationContext synchronizationContext;
         static readonly SendOrPostCallback callback = SendOrPostCallback;
@@ -35,15 +35,15 @@ namespace ObservableCollections
 
         public void Post(CollectionEventDispatcherEventArgs ev)
         {
-            if (SynchronizationContext.Current == null)
+            if (SynchronizationContext.Current == synchronizationContext)
             {
-                // non-UI thread, post the event asynchronously
-                synchronizationContext.Post(callback, ev);
+                // on the bound thread, send the event synchronously
+                callback(ev);
             }
             else
             {
-                // UI thread, send the event synchronously
-                callback(ev);
+                // another thread(it may have its own SynchronizationContext), post the event asynchronously
+                synchronizationContext.Post(callback, ev);
             }
         }
 

@@ -5,13 +5,13 @@ using System.Threading.Tasks;
 namespace ObservableCollections.Tests;
 
 /// <summary>
-/// https://github.com/Cysharp/ObservableCollections/issues/115
+/// ICollectionEventDispatcher が通知を UI スレッドへ遅延させる場合、
+/// UI スレッドが通知を処理する時点で通知の内容とコレクションの状態が一致していなければならない。
+/// 内部リストの更新だけが変更したスレッド上で先に進むと、この一致が崩れる。
 ///
-/// ワーカースレッドでコレクションを変更すると、内部リストの更新はその場で行われるのに
-/// CollectionChanged の発火だけが ICollectionEventDispatcher 経由で UI スレッドに遅延する。
-/// そのため UI スレッドが通知を処理する時点で、通知の内容とコレクションの状態が食い違う。
+/// https://github.com/Cysharp/ObservableCollections/issues/115
 /// </summary>
-public class Issue115Test
+public class DeferredNotificationConsistencyTest
 {
     [Fact]
     public void WorkerThreadMutation()

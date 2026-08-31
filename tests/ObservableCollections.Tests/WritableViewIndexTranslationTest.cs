@@ -1,9 +1,8 @@
 namespace ObservableCollections.Tests;
 
 /// <summary>
-/// 書き込み可能ビューの位置ベース操作は、View インデックスをソース インデックスへ
-/// 逆引き (AlternateIndexList.GetAlternateIndex) してからソースに反映しなければならない。
-/// セッターは逆引きしているが、RemoveAt と Insert は View インデックスをそのまま渡している。
+/// 書き込み可能ビューの位置ベース操作 (セッター、RemoveAt、Insert) は、View インデックスをソース
+/// インデックスへ逆引き (AlternateIndexList.GetAlternateIndex) してからソースに反映しなければならない。
 ///
 /// T と TView を別の型にして、converter をスキップするショートカット
 /// (typeof(T) == typeof(TView)) と絡まないようにしている。
