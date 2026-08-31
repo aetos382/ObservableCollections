@@ -5,6 +5,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 
 namespace ObservableCollections;
@@ -362,19 +363,39 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
             return;
         }
 
+        List<Exception>? exceptions = null;
+
         while (true)
         {
             CollectionEventDispatcherEventArgs applied;
             lock (gate)
             {
                 // apply the change to the visible list at the same time as raising the notification
-                if (!deferred.TryApplyNext(e, out applied)) return; // already applied
+                if (!deferred.TryApplyNext(e, out applied)) break; // already applied
             }
 
-            // do not raise inside gate, a subscriber may touch the source collection
-            RaiseChangedEventCore(applied);
+            try
+            {
+                // do not raise inside gate, a subscriber may touch the source collection
+                RaiseChangedEventCore(applied);
+            }
+            catch (Exception ex)
+            {
+                // a subscriber must not stop the remaining changes from being applied and raised
+                (exceptions ??= new()).Add(ex);
+            }
 
-            if (ReferenceEquals(applied, e)) return;
+            if (ReferenceEquals(applied, e)) break;
+        }
+
+        if (exceptions != null)
+        {
+            if (exceptions.Count == 1)
+            {
+                ExceptionDispatchInfo.Capture(exceptions[0]).Throw();
+            }
+
+            throw new AggregateException(exceptions);
         }
     }
 
@@ -1005,19 +1026,39 @@ internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollecti
             return;
         }
 
+        List<Exception>? exceptions = null;
+
         while (true)
         {
             CollectionEventDispatcherEventArgs applied;
             lock (gate)
             {
                 // apply the change to the visible list at the same time as raising the notification
-                if (!deferred.TryApplyNext(e, out applied)) return; // already applied
+                if (!deferred.TryApplyNext(e, out applied)) break; // already applied
             }
 
-            // do not raise inside gate, a subscriber may touch the source collection
-            RaiseChangedEventCore(applied);
+            try
+            {
+                // do not raise inside gate, a subscriber may touch the source collection
+                RaiseChangedEventCore(applied);
+            }
+            catch (Exception ex)
+            {
+                // a subscriber must not stop the remaining changes from being applied and raised
+                (exceptions ??= new()).Add(ex);
+            }
 
-            if (ReferenceEquals(applied, e)) return;
+            if (ReferenceEquals(applied, e)) break;
+        }
+
+        if (exceptions != null)
+        {
+            if (exceptions.Count == 1)
+            {
+                ExceptionDispatchInfo.Capture(exceptions[0]).Throw();
+            }
+
+            throw new AggregateException(exceptions);
         }
     }
 

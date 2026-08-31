@@ -417,4 +417,87 @@ public class DeferredNotificationTest
             notify.Dispose();
         }
     }
+
+    /// <summary>
+    /// 購読者が例外を投げても、まだ発火していない通知を捨ててはならない。
+    /// 別スレッドの変更が積まれている状態で UI スレッドから変更すると、古い通知も同じ呼び出しの中で
+    /// 発火されるため、そこで例外が出ると後続の通知が発火されないまま取り残される。
+    /// </summary>
+    [Fact]
+    public void SubscriberExceptionDoesNotDropRemainingNotifications()
+    {
+        using var ui = new TestUiThread("ui");
+
+        var list = new ObservableList<int>();
+        list.Add(1);
+
+        using var view = list.CreateView(x => $"${x}");
+
+        NotifyCollectionChangedSynchronizedViewList<string> notify = null!;
+        NotifyCollectionChangedContractTracker<string> tracker = null!;
+
+        var thrownCount = 0;
+
+        // Reset で NewItems が null になることを考えていないハンドラー相当。
+        void Thrower(object sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.Action == NotifyCollectionChangedAction.Reset)
+            {
+                thrownCount++;
+                throw new InvalidOperationException("subscriber");
+            }
+        }
+
+        ui.Invoke(() =>
+        {
+            notify = view.ToNotifyCollectionChanged(new SynchronizationContextCollectionEventDispatcher(ui.Context));
+
+            // 全通知を記録したいので tracker を先に購読する。
+            tracker = new NotifyCollectionChangedContractTracker<string>(notify);
+            notify.CollectionChanged += Thrower;
+        });
+
+        try
+        {
+            Task.Run(() => list.Clear()).Wait(); // 別スレッドなので Reset が積まれる
+
+            ui.PendingCount.Should().Be(1);
+
+            Exception error = null;
+
+            ui.Invoke(() =>
+            {
+                try
+                {
+                    list.Add(2); // UI スレッドなので同期発火。積まれていた Reset もここで発火される
+                }
+                catch (Exception ex)
+                {
+                    error = ex;
+                }
+            });
+
+            // Reset のハンドラーが投げた例外は、無関係な Add の呼び出し元に出てくる。
+            thrownCount.Should().Be(1);
+            error.Should().BeOfType<InvalidOperationException>();
+
+            // Add の通知と適用が失われてはならない。
+            tracker.Actions.Should().Equal(new[]
+            {
+                NotifyCollectionChangedAction.Reset,
+                NotifyCollectionChangedAction.Add,
+            });
+
+            tracker.Violations.Should().BeEmpty();
+            notify.Should().Equal(new[] { "$2" });
+
+            ui.Pump(); // 取り残された通知は無い
+
+            tracker.Actions.Should().HaveCount(2);
+        }
+        finally
+        {
+            notify.Dispose();
+        }
+    }
 }
