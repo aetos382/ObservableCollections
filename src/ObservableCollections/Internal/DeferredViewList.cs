@@ -16,7 +16,7 @@ namespace ObservableCollections.Internal
         public const int UntrackableIndex = -1;
 
         readonly List<TView> published;
-        readonly List<PendingChange> pending = [];
+        readonly Queue<PendingChange> pending = new();
 
         public DeferredViewList(IEnumerable<TView> initialItems)
         {
@@ -41,7 +41,7 @@ namespace ObservableCollections.Internal
 
         public void Enqueue(CollectionEventDispatcherEventArgs ev, TView[]? resetSnapshot)
         {
-            pending.Add(new PendingChange(ev, resetSnapshot));
+            pending.Enqueue(new PendingChange(ev, resetSnapshot));
         }
 
         /// <summary>
@@ -68,8 +68,7 @@ namespace ObservableCollections.Internal
                 return false;
             }
 
-            var change = pending[0];
-            pending.RemoveAt(0);
+            var change = pending.Dequeue();
             Apply(change);
             applied = change.Args;
             return true;
