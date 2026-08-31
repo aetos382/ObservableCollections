@@ -338,9 +338,50 @@ public class DeferredNotificationTest
         Task.Run(() => list.RemoveAt(1)).Wait(); // 2 が消える
 
         // 見えている ["$1", "$2", "$3"] の [1] は既に存在しない。
-        notify.Invoking(x => x.RemoveAt(1)).Should().Throw<InvalidOperationException>();
+        notify.Invoking(x => x.RemoveAt(1))
+            .Should().Throw<InvalidOperationException>()
+            .WithMessage("The element at index 1 has been removed*");
 
         list.Should().Equal(new[] { 1, 3 });
+    }
+
+    /// <summary>
+    /// 未処理の Reset があるとどのインデックスも読み替えられない。
+    /// 特定の要素が消えた場合と混同させず、インデックスを変えれば通ると誤解させないことを確認する。
+    /// </summary>
+    [Fact]
+    public void WriteDuringPendingReset()
+    {
+        var dispatcher = new QueuedCollectionEventDispatcher();
+
+        var list = new ObservableList<int>();
+        list.Add(1);
+        list.Add(2);
+
+        using var notify = list.ToWritableNotifyCollectionChanged(x => $"${x}", ToOriginal, dispatcher);
+
+        _ = new NotifyCollectionChangedContractTracker<string>(notify);
+
+        Task.Run(() =>
+        {
+            list.Clear();
+            list.Add(3);
+        }).Wait();
+
+        // 挿入位置であっても Reset は読み替えられない。
+        notify.Invoking(x => x.RemoveAt(0))
+            .Should().Throw<InvalidOperationException>()
+            .WithMessage("The collection has been reset*");
+
+        notify.Invoking(x => x.Insert(0, "$9"))
+            .Should().Throw<InvalidOperationException>()
+            .WithMessage("The collection has been reset*");
+
+        notify.Invoking(x => x[0] = "$9")
+            .Should().Throw<InvalidOperationException>()
+            .WithMessage("The collection has been reset*");
+
+        list.Should().Equal(new[] { 3 });
     }
 
     /// <summary>

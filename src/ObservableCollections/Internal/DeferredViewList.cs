@@ -4,6 +4,18 @@ using System.Linq;
 
 namespace ObservableCollections.Internal
 {
+    /// <summary>The reason why an index of the published list can not be translated.</summary>
+    internal enum UntrackableReason
+    {
+        None,
+
+        /// <summary>A pending change has removed the element itself.</summary>
+        Removed,
+
+        /// <summary>A pending reset has replaced the whole content, so no index can be translated.</summary>
+        Reset,
+    }
+
     /// <summary>
     /// Holds the list as the subscribers see it, when notifications are deferred by ICollectionEventDispatcher.
     /// Applying changes at the same time as raising the notification keeps the content of the notification
@@ -91,8 +103,11 @@ namespace ObservableCollections.Internal
         /// <param name="isInsertionPoint">
         /// true when the index means "before the element at this position" instead of the element itself.
         /// </param>
-        public int ToWriterIndex(int index, bool isInsertionPoint)
+        /// <param name="reason">Why it can not be tracked. None when it can.</param>
+        public int ToWriterIndex(int index, bool isInsertionPoint, out UntrackableReason reason)
         {
+            reason = UntrackableReason.None;
+
             foreach (var change in pending)
             {
                 var e = change.Args;
@@ -115,7 +130,11 @@ namespace ObservableCollections.Internal
                             else if (start <= index)
                             {
                                 // the element itself has been removed
-                                if (!isInsertionPoint) return UntrackableIndex;
+                                if (!isInsertionPoint)
+                                {
+                                    reason = UntrackableReason.Removed;
+                                    return UntrackableIndex;
+                                }
                                 index = start;
                             }
                         }
@@ -136,6 +155,7 @@ namespace ObservableCollections.Internal
                         }
                         break;
                     case NotifyCollectionChangedAction.Reset:
+                        reason = UntrackableReason.Reset;
                         return UntrackableIndex;
                     default: // Replace does not move any element
                         break;

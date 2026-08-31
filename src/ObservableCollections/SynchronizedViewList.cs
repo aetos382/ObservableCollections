@@ -15,6 +15,8 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
     static readonly PropertyChangedEventArgs CountPropertyChangedEventArgs = new("Count");
     static readonly Action<NotifyCollectionChangedEventArgs> raiseChangedEventInvoke = RaiseChangedEvent;
 
+    const string PendingChangeHint = "Wait until the pending notifications are dispatched, or change the source collection directly.";
+
     readonly ISynchronizedView<T, TView> parent;
     readonly AlternateIndexList<TView> listView;
     readonly bool isSupportRangeFeature; // WPF, Avalonia etc does not support range notification
@@ -417,6 +419,9 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
 
     /// <summary>
     /// Validates an index of the visible list and translates it into an index of listView.
+    /// Throws ArgumentOutOfRangeException when the index is out of the range of the visible list, and
+    /// InvalidOperationException when a pending change makes it impossible to translate. An insertion point
+    /// survives a pending remove of the element at that position, so only a pending reset fails it.
     /// </summary>
     int ToListViewIndex(int index, bool isInsertionPoint)
     {
@@ -431,10 +436,12 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
 
         if (deferred == null) return index;
 
-        var listViewIndex = deferred.ToWriterIndex(index, isInsertionPoint);
+        var listViewIndex = deferred.ToWriterIndex(index, isInsertionPoint, out var reason);
         if (listViewIndex == DeferredViewList<TView>.UntrackableIndex)
         {
-            throw new InvalidOperationException("The element at index " + index + " has already been changed by another thread and the notification is not dispatched yet.");
+            throw new InvalidOperationException(reason == UntrackableReason.Reset
+                ? "The collection has been reset and the notification is not dispatched yet, so no index can be resolved. " + PendingChangeHint
+                : "The element at index " + index + " has been removed and the notification is not dispatched yet. " + PendingChangeHint);
         }
         return listViewIndex;
     }
@@ -694,6 +701,8 @@ internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollecti
 {
     static readonly PropertyChangedEventArgs CountPropertyChangedEventArgs = new("Count");
     static readonly Action<NotifyCollectionChangedEventArgs> raiseChangedEventInvoke = RaiseChangedEvent;
+
+    const string PendingChangeHint = "Wait until the pending notifications are dispatched, or change the source collection directly.";
 
     readonly ISynchronizedView<T, TView> parent;
     readonly List<TView> listView; // no filter can be faster
@@ -1092,6 +1101,9 @@ internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollecti
 
     /// <summary>
     /// Validates an index of the visible list and translates it into an index of listView(it is same as the source index).
+    /// Throws ArgumentOutOfRangeException when the index is out of the range of the visible list, and
+    /// InvalidOperationException when a pending change makes it impossible to translate. An insertion point
+    /// survives a pending remove of the element at that position, so only a pending reset fails it.
     /// </summary>
     int ToListViewIndex(int index, bool isInsertionPoint)
     {
@@ -1106,10 +1118,12 @@ internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollecti
 
         if (deferred == null) return index;
 
-        var listViewIndex = deferred.ToWriterIndex(index, isInsertionPoint);
+        var listViewIndex = deferred.ToWriterIndex(index, isInsertionPoint, out var reason);
         if (listViewIndex == DeferredViewList<TView>.UntrackableIndex)
         {
-            throw new InvalidOperationException("The element at index " + index + " has already been changed by another thread and the notification is not dispatched yet.");
+            throw new InvalidOperationException(reason == UntrackableReason.Reset
+                ? "The collection has been reset and the notification is not dispatched yet, so no index can be resolved. " + PendingChangeHint
+                : "The element at index " + index + " has been removed and the notification is not dispatched yet. " + PendingChangeHint);
         }
         return listViewIndex;
     }
