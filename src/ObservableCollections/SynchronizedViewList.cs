@@ -1,4 +1,4 @@
-using ObservableCollections.Internal;
+﻿using ObservableCollections.Internal;
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
@@ -213,7 +213,7 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
                         var oldIndex = listView.RemoveAt(e.OldStartingIndex);
                         var newIndex = listView.Insert(e.NewStartingIndex, e.NewItem.View);
                         OnCollectionChanged(e.WithNewAndOldStartingIndex(newStartingIndex: newIndex, oldStartingIndex: oldIndex));
-                        return; // already notified
+                        return;
                     }
                 case NotifyCollectionChangedAction.Reset: // Clear or drastic changes
                     listView.Clear(IterateFilteredIndexedViewsOfParent()); // clear and fill refresh
