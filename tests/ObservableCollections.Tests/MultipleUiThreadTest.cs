@@ -11,11 +11,11 @@ namespace ObservableCollections.Tests;
 /// </summary>
 public class MultipleUiThreadTest
 {
-    static readonly NotifyCollectionChangedAction[] AddThenRemove =
-    [
+    static readonly NotifyCollectionChangedAction[] AddThenRemove = new[]
+    {
         NotifyCollectionChangedAction.Add,
         NotifyCollectionChangedAction.Remove,
-    ];
+    };
 
     /// <summary>
     /// 別の UI スレッドからの変更は、束縛先の UI スレッドへ遅延しなければならない。
