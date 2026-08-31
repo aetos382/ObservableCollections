@@ -343,6 +343,64 @@ public class DeferredNotificationTest
         list.Should().Equal(new[] { 1, 3 });
     }
 
+    /// <summary>
+    /// 見えているリストの末尾への挿入は、未処理の変更があっても末尾追加として扱われる。
+    /// </summary>
+    [Fact]
+    public void InsertAtTailDuringPendingNotification()
+    {
+        var dispatcher = new QueuedCollectionEventDispatcher();
+
+        var list = new ObservableList<int>();
+        list.Add(1);
+        list.Add(2);
+
+        using var notify = list.ToWritableNotifyCollectionChanged(x => $"${x}", ToOriginal, dispatcher);
+
+        var tracker = new NotifyCollectionChangedContractTracker<string>(notify);
+
+        Task.Run(() => list.Insert(0, 0)).Wait();
+
+        // 見えているのは ["$1", "$2"] なので、[2] は末尾。
+        notify.Insert(2, "$9");
+
+        list.Should().Equal(new[] { 0, 1, 2, 9 });
+
+        dispatcher.Pump();
+
+        tracker.Violations.Should().BeEmpty();
+        notify.Should().Equal(new[] { "$0", "$1", "$2", "$9" });
+    }
+
+    /// <summary>
+    /// 範囲外のインデックスの扱いは、ディスパッチャーの有無で変わってはならない。
+    /// 呼び出し元が渡した -1 を、追跡不能を表す内部の -1 と混同すると
+    /// ArgumentOutOfRangeException ではなく InvalidOperationException になってしまう。
+    /// </summary>
+    [Fact]
+    public void OutOfRangeIndexIsRejected()
+    {
+        var dispatcher = new QueuedCollectionEventDispatcher();
+
+        var list = new ObservableList<int>();
+        list.Add(1);
+        list.Add(2);
+
+        using var notify = list.ToWritableNotifyCollectionChanged(x => $"${x}", ToOriginal, dispatcher);
+
+        _ = new NotifyCollectionChangedContractTracker<string>(notify);
+
+        notify.Invoking(x => x.Insert(3, "$9")).Should().Throw<ArgumentOutOfRangeException>();
+        notify.Invoking(x => x.Insert(-1, "$9")).Should().Throw<ArgumentOutOfRangeException>();
+        notify.Invoking(x => x.RemoveAt(2)).Should().Throw<ArgumentOutOfRangeException>();
+        notify.Invoking(x => x.RemoveAt(-1)).Should().Throw<ArgumentOutOfRangeException>();
+        notify.Invoking(x => x[2] = "$9").Should().Throw<ArgumentOutOfRangeException>();
+        notify.Invoking(x => x[-1] = "$9").Should().Throw<ArgumentOutOfRangeException>();
+
+        list.Should().Equal(new[] { 1, 2 });
+        dispatcher.PendingCount.Should().Be(0);
+    }
+
     [Fact]
     public void ResetIsDeferred()
     {

@@ -1,3 +1,5 @@
+using System;
+
 namespace ObservableCollections.Tests;
 
 /// <summary>
@@ -61,5 +63,60 @@ public class WritableViewIndexTranslationTest
         bindable[0].Should().Be("$2");
         bindable[1].Should().Be("$6");
         bindable[2].Should().Be("$4");
+    }
+
+    /// <summary>
+    /// 末尾への挿入はソース インデックスが決まらないので末尾追加として扱われる。
+    /// これは正当な操作なので、範囲外の拒否と混同してはならない。
+    /// </summary>
+    [Fact]
+    public void InsertAtTail()
+    {
+        var list = new ObservableList<int>();
+        list.Add(1);
+        list.Add(2);
+        list.Add(3);
+        list.Add(4);
+
+        using var view = list.CreateWritableView(x => $"${x}");
+        view.AttachFilter(x => x % 2 == 0);
+
+        using var bindable = view.ToWritableNotifyCollectionChanged(ToOriginal);
+
+        // View は ["$2", "$4"]。その [2] は末尾。
+        bindable.Insert(2, "$6");
+
+        list.Should().Equal(new[] { 1, 2, 3, 4, 6 });
+
+        bindable.Should().Equal(new[] { "$2", "$4", "$6" });
+    }
+
+    /// <summary>
+    /// 範囲外のインデックスは ArgumentOutOfRangeException で拒否し、ソースを変更しないことを確認する。
+    /// 末尾追加へのフォールバックが範囲外まで飲み込んでしまっていた。
+    /// </summary>
+    [Fact]
+    public void OutOfRangeIndexIsRejected()
+    {
+        var list = new ObservableList<int>();
+        list.Add(1);
+        list.Add(2);
+        list.Add(3);
+        list.Add(4);
+
+        using var view = list.CreateWritableView(x => $"${x}");
+        view.AttachFilter(x => x % 2 == 0);
+
+        using var bindable = view.ToWritableNotifyCollectionChanged(ToOriginal);
+
+        // View は ["$2", "$4"] なので Count は 2。
+        bindable.Invoking(x => x.Insert(3, "$6")).Should().Throw<ArgumentOutOfRangeException>();
+        bindable.Invoking(x => x.Insert(-1, "$6")).Should().Throw<ArgumentOutOfRangeException>();
+        bindable.Invoking(x => x.RemoveAt(2)).Should().Throw<ArgumentOutOfRangeException>();
+        bindable.Invoking(x => x.RemoveAt(-1)).Should().Throw<ArgumentOutOfRangeException>();
+        bindable.Invoking(x => x[2] = "$6").Should().Throw<ArgumentOutOfRangeException>();
+        bindable.Invoking(x => x[-1] = "$6").Should().Throw<ArgumentOutOfRangeException>();
+
+        list.Should().Equal(new[] { 1, 2, 3, 4 });
     }
 }

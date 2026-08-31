@@ -416,11 +416,19 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
     }
 
     /// <summary>
-    /// Translates an index of the visible list into an index of listView.
+    /// Validates an index of the visible list and translates it into an index of listView.
     /// </summary>
     int ToListViewIndex(int index, bool isInsertionPoint)
     {
         // called inside gate
+        // validate before translating, an untrackable index is -1 and a caller may pass -1 too
+        var count = deferred == null ? listView.Count : deferred.Count;
+        var max = isInsertionPoint ? count : count - 1;
+        if (index < 0 || index > max)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), index, "The index is out of the range of the collection. Count: " + count);
+        }
+
         if (deferred == null) return index;
 
         var listViewIndex = deferred.ToWriterIndex(index, isInsertionPoint);
@@ -1083,11 +1091,19 @@ internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollecti
     }
 
     /// <summary>
-    /// Translates an index of the visible list into an index of listView(it is same as the source index).
+    /// Validates an index of the visible list and translates it into an index of listView(it is same as the source index).
     /// </summary>
     int ToListViewIndex(int index, bool isInsertionPoint)
     {
         // called inside gate
+        // validate before translating, an untrackable index is -1 and a caller may pass -1 too
+        var count = deferred == null ? listView.Count : deferred.Count;
+        var max = isInsertionPoint ? count : count - 1;
+        if (index < 0 || index > max)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), index, "The index is out of the range of the collection. Count: " + count);
+        }
+
         if (deferred == null) return index;
 
         var listViewIndex = deferred.ToWriterIndex(index, isInsertionPoint);
