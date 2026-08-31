@@ -22,6 +22,44 @@ public class DeferredNotificationTest
         return original;
     }
 
+    sealed class Flagged
+    {
+        public bool Visible { get; set; }
+    }
+
+    /// <summary>
+    /// フィルターの判定が追加時と削除時で食い違うと、ビューに入っていない要素の削除通知が流れてくる。
+    /// ビューの内容が変わっていないのだから、購読者に通知してはならないことを確認する。
+    /// インデックスが不明な (-1 の) 通知を積むと、発火時に適用できず内容の整合が永久に崩れる。
+    /// </summary>
+    [Fact]
+    public void RemoveOfItemMissingFromViewIsNotNotified()
+    {
+        var dispatcher = new QueuedCollectionEventDispatcher();
+
+        var item = new Flagged { Visible = false };
+
+        var set = new ObservableHashSet<Flagged>();
+        set.Add(item);
+
+        using var view = set.CreateView(x => x);
+        view.AttachFilter(x => x.Visible); // item は除外されるのでビューに入らない
+
+        using var notify = view.ToNotifyCollectionChanged(dispatcher);
+
+        var tracker = new NotifyCollectionChangedContractTracker<Flagged>(notify);
+
+        item.Visible = true; // ビューは再評価しないので内容は空のまま
+
+        set.Remove(item); // 削除時の判定は true なので Remove の通知が流れる
+
+        dispatcher.Pump();
+
+        tracker.Actions.Should().BeEmpty();
+        tracker.Violations.Should().BeEmpty();
+        notify.Should().BeEmpty();
+    }
+
     /// <summary>
     /// フィルタを持たないビュー (NonFilteredSynchronizedViewList) でも同じ保証が必要。
     /// </summary>

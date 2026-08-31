@@ -133,6 +133,7 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
                             if (e.OldStartingIndex == -1) // can't gurantee correct remove if index is not provided
                             {
                                 index = listView.Remove(e.OldItem.View);
+                                if (index == -1) return; // not in the view, listView is not changed
                             }
                             else
                             {
@@ -143,10 +144,13 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
                         {
                             if (e.OldStartingIndex == -1)
                             {
-                                foreach (var view in e.OldViews) // index is unknown, can't do batching
+                                var removedSpan = e.OldViews;
+                                for (int i = 0; i < removedSpan.Length; i++) // index is unknown, can't do batching
                                 {
-                                    listView.Remove(view);
-                                    OnCollectionChanged(e.WithOldStartingIndex(index));
+                                    var removedIndex = listView.Remove(removedSpan[i]);
+                                    if (removedIndex == -1) continue; // not in the view, listView is not changed
+                                    var removedEv = new SynchronizedViewChangedEventArgs<T, TView>(e.Action, true, oldItem: (e.OldValues[i], removedSpan[i]), oldStartingIndex: removedIndex);
+                                    OnCollectionChanged(removedEv);
                                 }
                                 return;
                             }
@@ -777,6 +781,7 @@ internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollecti
                             if (e.OldStartingIndex == -1) // can't gurantee correct remove if index is not provided
                             {
                                 var index = listView.IndexOf(e.OldItem.View);
+                                if (index == -1) return; // not in the view, listView is not changed
                                 listView.RemoveAt(index);
                                 OnCollectionChanged(e.WithOldStartingIndex(index));
                                 return;
@@ -790,11 +795,14 @@ internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollecti
                         {
                             if (e.OldStartingIndex == -1)
                             {
-                                foreach (var view in e.OldViews) // index is unknown, can't do batching
+                                var removedSpan = e.OldViews;
+                                for (int i = 0; i < removedSpan.Length; i++) // index is unknown, can't do batching
                                 {
-                                    var index = listView.IndexOf(view);
-                                    listView.RemoveAt(index);
-                                    OnCollectionChanged(e.WithOldStartingIndex(index));
+                                    var removedIndex = listView.IndexOf(removedSpan[i]);
+                                    if (removedIndex == -1) continue; // not in the view, listView is not changed
+                                    listView.RemoveAt(removedIndex);
+                                    var removedEv = new SynchronizedViewChangedEventArgs<T, TView>(e.Action, true, oldItem: (e.OldValues[i], removedSpan[i]), oldStartingIndex: removedIndex);
+                                    OnCollectionChanged(removedEv);
                                 }
                                 return;
                             }
