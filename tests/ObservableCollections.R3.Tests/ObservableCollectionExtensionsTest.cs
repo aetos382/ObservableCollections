@@ -268,6 +268,32 @@ public class ObservableCollectionExtensionsTest
         events.Should().BeEquivalentTo([1, 0]);
     }
 
+    /// <summary>
+    /// ISynchronizedView に対する ObserveCountChanged でも、observer が副作用として
+    /// コレクションを変更した場合に、その変更による件数が取りこぼされないことを確認する。
+    /// </summary>
+    [Fact]
+    public void ObserveViewCountChanged_WithSideEffect()
+    {
+        var events = new List<int>();
+        var collection = new ObservableList<int>([]);
+        using var view = collection.CreateView(x => x);
+
+        using var _ = view.ObserveCountChanged().Subscribe(count =>
+        {
+            events.Add(count);
+            // Side effect - when count is 1, clear the list
+            if (count == 1) collection.Clear();
+        });
+
+        events.Should().BeEmpty();
+
+        collection.Add(12);
+
+        view.Count.Should().Be(0);
+        events.Should().BeEquivalentTo([1, 0]);
+    }
+
     [Fact]
     public void ObserveCountChanged_NotifyCurrent()
     {
