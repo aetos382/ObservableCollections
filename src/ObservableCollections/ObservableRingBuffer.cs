@@ -9,8 +9,30 @@ namespace ObservableCollections
     public partial class ObservableRingBuffer<T> : IList<T>, IReadOnlyList<T>, IObservableCollection<T>
     {
         readonly RingBuffer<T> buffer;
+        ReentrancyGuard guard;
 
+        /// <inheritdoc />
         public event NotifyCollectionChangedEventHandler<T>? CollectionChanged;
+
+        void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<T> args)
+        {
+            bool rejected;
+
+            guard.BeginNotification();
+            try
+            {
+                CollectionChanged?.Invoke(args);
+            }
+            finally
+            {
+                rejected = guard.EndNotification();
+            }
+
+            if (rejected)
+            {
+                ReentrancyGuard.ThrowReentrancyNotAllowed(nameof(ObservableRingBuffer<T>));
+            }
+        }
 
         public ObservableRingBuffer()
         {
@@ -39,9 +61,10 @@ namespace ObservableCollections
             {
                 lock (SyncRoot)
                 {
+                    if (guard.RejectIfNotifying()) return;
                     var oldValue = buffer[index];
                     buffer[index] = value;
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Replace(value, oldValue, index, index));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Replace(value, oldValue, index, index));
                 }
             }
         }
@@ -61,8 +84,9 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 buffer.AddFirst(item);
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(item, 0));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(item, 0));
             }
         }
 
@@ -70,8 +94,9 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 buffer.AddLast(item);
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(item, buffer.Count - 1));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(item, buffer.Count - 1));
             }
         }
 
@@ -79,8 +104,9 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                guard.ThrowIfNotifying(nameof(ObservableRingBuffer<T>));
                 var item = buffer.RemoveFirst();
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(item, 0));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(item, 0));
                 return item;
             }
         }
@@ -89,9 +115,10 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                guard.ThrowIfNotifying(nameof(ObservableRingBuffer<T>));
                 var index = buffer.Count - 1;
                 var item = buffer.RemoveLast();
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(item, index));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(item, index));
                 return item;
             }
         }
@@ -102,6 +129,7 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 var index = buffer.Count;
                 using (var xs = new CloneCollection<T>(items))
                 {
@@ -109,7 +137,7 @@ namespace ObservableCollections
                     {
                         buffer.AddLast(item);
                     }
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(xs.Span, index));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(xs.Span, index));
                 }
             }
         }
@@ -118,12 +146,13 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 var index = buffer.Count;
                 foreach (var item in items)
                 {
                     buffer.AddLast(item);
                 }
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(items, index));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(items, index));
             }
         }
 
@@ -131,12 +160,13 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 var index = buffer.Count;
                 foreach (var item in items)
                 {
                     buffer.AddLast(item);
                 }
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(items, index));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(items, index));
             }
         }
 
@@ -172,8 +202,9 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 buffer.Clear();
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Reset());
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Reset());
             }
         }
 

@@ -13,6 +13,7 @@ namespace ObservableCollections
     public partial class ObservableQueue<T> : IReadOnlyCollection<T>, IObservableCollection<T>
     {
         readonly Queue<T> queue;
+        ReentrancyGuard guard;
         public object SyncRoot { get; } = new object();
 
         public ObservableQueue()
@@ -30,7 +31,28 @@ namespace ObservableCollections
             this.queue = new Queue<T>(collection);
         }
 
+        /// <inheritdoc />
         public event NotifyCollectionChangedEventHandler<T>? CollectionChanged;
+
+        void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<T> args)
+        {
+            bool rejected;
+
+            guard.BeginNotification();
+            try
+            {
+                CollectionChanged?.Invoke(args);
+            }
+            finally
+            {
+                rejected = guard.EndNotification();
+            }
+
+            if (rejected)
+            {
+                ReentrancyGuard.ThrowReentrancyNotAllowed(nameof(ObservableQueue<T>));
+            }
+        }
 
         public int Count
         {
@@ -47,9 +69,10 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 var index = queue.Count;
                 queue.Enqueue(item);
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(item, index));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(item, index));
             }
         }
 
@@ -57,6 +80,7 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 var index = queue.Count;
                 using (var xs = new CloneCollection<T>(items))
                 {
@@ -64,7 +88,7 @@ namespace ObservableCollections
                     {
                         queue.Enqueue(item);
                     }
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(xs.Span, index));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(xs.Span, index));
                 }
             }
         }
@@ -73,12 +97,13 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 var index = queue.Count;
                 foreach (var item in items)
                 {
                     queue.Enqueue(item);
                 }
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(items, index));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(items, index));
             }
         }
 
@@ -86,12 +111,13 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 var index = queue.Count;
                 foreach (var item in items)
                 {
                     queue.Enqueue(item);
                 }
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(items, index));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(items, index));
             }
         }
 
@@ -99,8 +125,9 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                guard.ThrowIfNotifying(nameof(ObservableQueue<T>));
                 var v = queue.Dequeue();
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(v, 0));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(v, 0));
                 return v;
             }
         }
@@ -109,10 +136,16 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying())
+                {
+                    result = default;
+                    return false;
+                }
+
                 if (queue.Count != 0)
                 {
                     result = queue.Dequeue();
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(result, 0));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(result, 0));
                     return true;
                 }
                 result = default;
@@ -124,6 +157,7 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 var dest = ArrayPool<T>.Shared.Rent(count);
                 try
                 {
@@ -132,7 +166,7 @@ namespace ObservableCollections
                         dest[i] = queue.Dequeue();
                     }
 
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(dest.AsSpan(0, count), 0));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(dest.AsSpan(0, count), 0));
                 }
                 finally
                 {
@@ -145,12 +179,13 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 for (int i = 0; i < dest.Length; i++)
                 {
                     dest[i] = queue.Dequeue();
                 }
 
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(dest, 0));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(dest, 0));
             }
         }
 
@@ -158,8 +193,9 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 queue.Clear();
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Reset());
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Reset());
             }
         }
 

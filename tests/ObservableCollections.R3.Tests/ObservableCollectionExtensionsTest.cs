@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using R3;
@@ -247,25 +248,36 @@ public class ObservableCollectionExtensionsTest
         events.Count.Should().Be(3);
     }
 
+    /// <summary>
+    /// 購読者がコレクションを変更した場合、後続の購読者への通知順序が保証できないため、コアの再入検出に
+    /// よって拒否され、入れ子の変更が適用されないことを確認する。拒否は購読者に対して例外を投げずに
+    /// 行われるため R3 の OnErrorResume には流れず、違反は変更を要求した Add の呼び出し元に報告される。
+    /// </summary>
     [Fact]
     public void ObserveCountChanged_WithSideEffect()
     {
         var events = new List<int>();
+        var errors = new List<Exception>();
         var collection = new ObservableList<int>([]);
 
-        using var _ = collection.ObserveCountChanged().Subscribe(count =>
-        {
-            events.Add(count);
-            // Side effect - when count is 1, clear the list
-            if(count == 1) collection.Clear();
-        });
+        using var _ = collection.ObserveCountChanged().Subscribe(
+            count =>
+            {
+                events.Add(count);
+                // Side effect - when count is 1, clear the list
+                if(count == 1) collection.Clear();
+            },
+            errors.Add,
+            _ => { });
 
         events.Should().BeEmpty();
 
-        collection.Add(12);
+        var act = () => collection.Add(12);
 
-        collection.Count.Should().Be(0);
-        events.Should().BeEquivalentTo([1, 0]);
+        act.Should().Throw<CollectionReentrancyException>();
+        collection.Count.Should().Be(1);
+        events.Should().BeEquivalentTo([1]);
+        errors.Should().BeEmpty();
     }
 
     [Fact]

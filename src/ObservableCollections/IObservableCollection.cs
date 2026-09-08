@@ -12,6 +12,23 @@ namespace ObservableCollections
 
     public interface IObservableCollection<T> : IReadOnlyCollection<T>
     {
+        /// <summary>
+        /// Raised after a change has been applied to the collection.
+        /// </summary>
+        /// <remarks>
+        /// Do not change the collection from a handler of this event. A handler observes a state that
+        /// matches the notification it is given, and a nested change would break that for the handlers
+        /// that have not been called yet. Such a change is therefore refused: the handler simply sees
+        /// nothing happen (the methods that return a value report failure), and once the notification has
+        /// been delivered to every handler, a <see cref="CollectionReentrancyException"/> is thrown at
+        /// the call site that made the original change. The members that return the removed element
+        /// (<c>Dequeue</c>, <c>Pop</c>, <c>RemoveFirst</c>, <c>RemoveLast</c>) cannot report a refusal
+        /// through their return value, so they throw immediately and the delivery is cut short.
+        /// The rule holds unconditionally, but it can only be enforced while the notification is being
+        /// raised synchronously. When the notification reaches a handler through an
+        /// <see cref="ICollectionEventDispatcher"/>, the source collection is no longer notifying, so a
+        /// change made from that handler is applied instead of being refused.
+        /// </remarks>
         event NotifyCollectionChangedEventHandler<T>? CollectionChanged;
         object SyncRoot { get; }
         ISynchronizedView<T, TView> CreateView<TView>(Func<T, TView> transform);

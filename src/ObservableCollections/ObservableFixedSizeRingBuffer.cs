@@ -9,8 +9,30 @@ namespace ObservableCollections
     {
         readonly RingBuffer<T> buffer;
         readonly int capacity;
+        ReentrancyGuard guard;
 
+        /// <inheritdoc />
         public event NotifyCollectionChangedEventHandler<T>? CollectionChanged;
+
+        void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<T> args)
+        {
+            bool rejected;
+
+            guard.BeginNotification();
+            try
+            {
+                CollectionChanged?.Invoke(args);
+            }
+            finally
+            {
+                rejected = guard.EndNotification();
+            }
+
+            if (rejected)
+            {
+                ReentrancyGuard.ThrowReentrancyNotAllowed(nameof(ObservableFixedSizeRingBuffer<T>));
+            }
+        }
 
         public ObservableFixedSizeRingBuffer(int capacity)
         {
@@ -49,9 +71,10 @@ namespace ObservableCollections
             {
                 lock (SyncRoot)
                 {
+                    if (guard.RejectIfNotifying()) return;
                     var oldValue = buffer[index];
                     buffer[index] = value;
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Replace(value, oldValue, index, index));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Replace(value, oldValue, index, index));
                 }
             }
         }
@@ -73,14 +96,15 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 if (capacity == buffer.Count)
                 {
                     var remItem = buffer.RemoveLast();
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(remItem, capacity - 1));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(remItem, capacity - 1));
                 }
 
                 buffer.AddFirst(item);
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(item, 0));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(item, 0));
             }
         }
 
@@ -88,14 +112,15 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 if (capacity == buffer.Count)
                 {
                     var remItem = buffer.RemoveFirst();
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(remItem, 0));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(remItem, 0));
                 }
 
                 buffer.AddLast(item);
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(item, buffer.Count - 1));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(item, buffer.Count - 1));
             }
         }
 
@@ -103,8 +128,9 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                guard.ThrowIfNotifying(nameof(ObservableFixedSizeRingBuffer<T>));
                 var item = buffer.RemoveFirst();
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(item, 0));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(item, 0));
                 return item;
             }
         }
@@ -113,9 +139,10 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                guard.ThrowIfNotifying(nameof(ObservableFixedSizeRingBuffer<T>));
                 var index = buffer.Count - 1;
                 var item = buffer.RemoveLast();
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(item, index));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(item, index));
                 return item;
             }
         }
@@ -126,6 +153,7 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 using (var xs = new CloneCollection<T>(items))
                 {
                     if (capacity <= buffer.Count + xs.Span.Length)
@@ -139,7 +167,7 @@ namespace ObservableCollections
                                 ys.Add(buffer.RemoveFirst());
                             }
 
-                            CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0));
+                            NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0));
                         }
                     }
 
@@ -154,7 +182,7 @@ namespace ObservableCollections
                     {
                         buffer.AddLast(item);
                     }
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(span, index));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(span, index));
                 }
             }
         }
@@ -163,6 +191,7 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 if (capacity <= buffer.Count + items.Length)
                 {
                     // calc remove count
@@ -174,7 +203,7 @@ namespace ObservableCollections
                             ys.Add(buffer.RemoveFirst());
                         }
 
-                        CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0));
+                        NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0));
                     }
                 }
 
@@ -189,7 +218,7 @@ namespace ObservableCollections
                 {
                     buffer.AddLast(item);
                 }
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(span, index));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(span, index));
             }
         }
 
@@ -197,6 +226,7 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 if (capacity <= buffer.Count + items.Length)
                 {
                     // calc remove count
@@ -208,7 +238,7 @@ namespace ObservableCollections
                             ys.Add(buffer.RemoveFirst());
                         }
 
-                        CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0));
+                        NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0));
                     }
                 }
 
@@ -223,7 +253,7 @@ namespace ObservableCollections
                 {
                     buffer.AddLast(item);
                 }
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(span, index));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(span, index));
             }
         }
 
@@ -259,8 +289,9 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 buffer.Clear();
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Reset());
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Reset());
             }
         }
 

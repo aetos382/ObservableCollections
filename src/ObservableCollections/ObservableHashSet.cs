@@ -12,6 +12,7 @@ namespace ObservableCollections
         where T : notnull
     {
         readonly HashSet<T> set;
+        ReentrancyGuard guard;
         public object SyncRoot { get; } = new object();
 
         public ObservableHashSet()
@@ -48,7 +49,28 @@ namespace ObservableCollections
             this.set = new HashSet<T>(collection: collection, comparer: comparer);
         }
 
+        /// <inheritdoc />
         public event NotifyCollectionChangedEventHandler<T>? CollectionChanged;
+
+        void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<T> args)
+        {
+            bool rejected;
+
+            guard.BeginNotification();
+            try
+            {
+                CollectionChanged?.Invoke(args);
+            }
+            finally
+            {
+                rejected = guard.EndNotification();
+            }
+
+            if (rejected)
+            {
+                ReentrancyGuard.ThrowReentrancyNotAllowed(nameof(ObservableHashSet<T>));
+            }
+        }
 
         public int Count
         {
@@ -67,9 +89,10 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return false;
                 if (set.Add(item))
                 {
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(item, -1));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(item, -1));
                     return true;
                 }
 
@@ -81,6 +104,7 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 if (!items.TryGetNonEnumeratedCount(out var capacity))
                 {
                     capacity = 4;
@@ -96,7 +120,7 @@ namespace ObservableCollections
                         }
                     }
 
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(list.Span, -1));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(list.Span, -1));
                 }
             }
         }
@@ -110,6 +134,7 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 using (var list = new ResizableArray<T>(items.Length))
                 {
                     foreach (var item in items)
@@ -120,7 +145,7 @@ namespace ObservableCollections
                         }
                     }
 
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Add(list.Span, -1));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(list.Span, -1));
                 }
             }
         }
@@ -129,9 +154,10 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return false;
                 if (set.Remove(item))
                 {
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(item, -1));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(item, -1));
                     return true;
                 }
 
@@ -143,6 +169,7 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 if (!items.TryGetNonEnumeratedCount(out var capacity))
                 {
                     capacity = 4;
@@ -158,7 +185,7 @@ namespace ObservableCollections
                         }
                     }
 
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(list.Span, -1));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(list.Span, -1));
                 }
             }
         }
@@ -172,6 +199,7 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 using (var list = new ResizableArray<T>(items.Length))
                 {
                     foreach (var item in items)
@@ -182,7 +210,7 @@ namespace ObservableCollections
                         }
                     }
 
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Remove(list.Span, -1));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(list.Span, -1));
                 }
             }
         }
@@ -191,8 +219,9 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 set.Clear();
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<T>.Reset());
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Reset());
             }
         }
 

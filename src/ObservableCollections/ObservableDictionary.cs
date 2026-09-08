@@ -11,6 +11,7 @@ namespace ObservableCollections
         where TKey : notnull
     {
         readonly Dictionary<TKey, TValue> dictionary;
+        ReentrancyGuard guard;
         public object SyncRoot { get; } = new object();
 
         public ObservableDictionary()
@@ -46,7 +47,28 @@ namespace ObservableCollections
 #endif
         }
 
+        /// <inheritdoc />
         public event NotifyCollectionChangedEventHandler<KeyValuePair<TKey, TValue>>? CollectionChanged;
+
+        void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>> args)
+        {
+            bool rejected;
+
+            guard.BeginNotification();
+            try
+            {
+                CollectionChanged?.Invoke(args);
+            }
+            finally
+            {
+                rejected = guard.EndNotification();
+            }
+
+            if (rejected)
+            {
+                ReentrancyGuard.ThrowReentrancyNotAllowed(nameof(ObservableDictionary<TKey, TValue>));
+            }
+        }
 
         public TValue this[TKey key]
         {
@@ -61,10 +83,11 @@ namespace ObservableCollections
             {
                 lock (SyncRoot)
                 {
+                    if (guard.RejectIfNotifying()) return;
                     if (dictionary.TryGetValue(key, out var oldValue))
                     {
                         dictionary[key] = value;
-                        CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>>.Replace(
+                        NotifyCollectionChanged(NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>>.Replace(
                             new KeyValuePair<TKey, TValue>(key, value),
                             new KeyValuePair<TKey, TValue>(key, oldValue!),
                             -1, -1));
@@ -139,8 +162,9 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 dictionary.Add(key, value);
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>>.Add(new KeyValuePair<TKey, TValue>(key, value), -1));
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>>.Add(new KeyValuePair<TKey, TValue>(key, value), -1));
             }
         }
 
@@ -153,8 +177,9 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return;
                 dictionary.Clear();
-                CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>>.Reset());
+                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>>.Reset());
             }
         }
 
@@ -186,9 +211,10 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return false;
                 if (dictionary.Remove(key, out var value))
                 {
-                    CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>>.Remove(new KeyValuePair<TKey, TValue>(key, value), -1));
+                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>>.Remove(new KeyValuePair<TKey, TValue>(key, value), -1));
                     return true;
                 }
                 return false;
@@ -199,13 +225,14 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
+                if (guard.RejectIfNotifying()) return false;
                 if (dictionary.TryGetValue(item.Key, out var value))
                 {
                     if (EqualityComparer<TValue>.Default.Equals(value, item.Value))
                     {
                         if (dictionary.Remove(item.Key, out var value2))
                         {
-                            CollectionChanged?.Invoke(NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>>.Remove(new KeyValuePair<TKey, TValue>(item.Key, value2), -1));
+                            NotifyCollectionChanged(NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>>.Remove(new KeyValuePair<TKey, TValue>(item.Key, value2), -1));
                             return true;
                         }
                     }

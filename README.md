@@ -104,6 +104,12 @@ static void List_CollectionChanged(in NotifyCollectionChangedEventArgs<int> e)
 }
 ```
 
+Do not change the collection from a `CollectionChanged` handler. A handler is given a notification that describes the state it observes, and a nested change would invalidate that notification for the handlers that have not been called yet. Such a change is therefore refused: the handler simply sees nothing happen (`Remove`, `Add` on `ObservableHashSet<T>`, `TryDequeue` and `TryPop` report `false`), the notification is still delivered to every remaining handler, and then a `CollectionReentrancyException` is thrown at the call site that requested the original change. `Dequeue`, `Pop`, `RemoveFirst` and `RemoveLast` return the removed element and so have no way to report a refusal; they throw immediately, which cuts the delivery short.
+
+`CollectionReentrancyException` derives from `InvalidOperationException`. Catching the dedicated type lets you tell the violation apart from the `InvalidOperationException` that those same four members throw for an empty collection.
+
+This rule holds unconditionally, but it can only be enforced while the notification is raised synchronously. If a handler receives the notification through an `ICollectionEventDispatcher`, the source collection is no longer notifying by the time the handler runs, so a change made there is applied rather than refused. It is still a change made from a notification handler, and the guarantee above does not hold for it.
+
 While it is possible to manually handle the `CollectionChanged` event as shown in the example above, you can also create a `SynchronizedView` as a collection that holds a separate synchronized value.
 
 ```csharp
