@@ -16,9 +16,20 @@ namespace ObservableCollections
 
         void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<T> args)
         {
-            bool rejected;
-            string? rejectedMember;
+            var rejection = default(Rejection);
 
+            RaiseCollectionChanged(args, ref rejection);
+
+            rejection.ThrowIfRejected(nameof(ObservableFixedSizeRingBuffer<T>));
+        }
+
+        // Adding to a full buffer evicts an element, which is notified before the addition is applied.
+        // Reporting a refusal from that first notification would abandon the addition and drop the
+        // element the caller passed in, so the methods that notify twice collect the refusal here and
+        // report it once the whole operation has been applied. Every notification still describes the
+        // state the collection is actually in when it is delivered.
+        void RaiseCollectionChanged(in NotifyCollectionChangedEventArgs<T> args, ref Rejection rejection)
+        {
             guard.BeginNotification();
             try
             {
@@ -26,12 +37,7 @@ namespace ObservableCollections
             }
             finally
             {
-                rejected = guard.EndNotification(out rejectedMember);
-            }
-
-            if (rejected)
-            {
-                ReentrancyGuard.ThrowRejectedChange(nameof(ObservableFixedSizeRingBuffer<T>), rejectedMember);
+                rejection.Accumulate(guard.EndNotification());
             }
         }
 
@@ -98,14 +104,19 @@ namespace ObservableCollections
             lock (SyncRoot)
             {
                 if (guard.RejectIfNotifying()) return;
+
+                var rejection = default(Rejection);
+
                 if (capacity == buffer.Count)
                 {
                     var remItem = buffer.RemoveLast();
-                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(remItem, capacity - 1));
+                    RaiseCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(remItem, capacity - 1), ref rejection);
                 }
 
                 buffer.AddFirst(item);
-                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(item, 0));
+                RaiseCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(item, 0), ref rejection);
+
+                rejection.ThrowIfRejected(nameof(ObservableFixedSizeRingBuffer<T>));
             }
         }
 
@@ -114,14 +125,19 @@ namespace ObservableCollections
             lock (SyncRoot)
             {
                 if (guard.RejectIfNotifying()) return;
+
+                var rejection = default(Rejection);
+
                 if (capacity == buffer.Count)
                 {
                     var remItem = buffer.RemoveFirst();
-                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(remItem, 0));
+                    RaiseCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(remItem, 0), ref rejection);
                 }
 
                 buffer.AddLast(item);
-                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(item, buffer.Count - 1));
+                RaiseCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(item, buffer.Count - 1), ref rejection);
+
+                rejection.ThrowIfRejected(nameof(ObservableFixedSizeRingBuffer<T>));
             }
         }
 
@@ -155,6 +171,9 @@ namespace ObservableCollections
             lock (SyncRoot)
             {
                 if (guard.RejectIfNotifying()) return;
+
+                var rejection = default(Rejection);
+
                 using (var xs = new CloneCollection<T>(items))
                 {
                     if (capacity <= buffer.Count + xs.Span.Length)
@@ -168,7 +187,7 @@ namespace ObservableCollections
                                 ys.Add(buffer.RemoveFirst());
                             }
 
-                            NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0));
+                            RaiseCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0), ref rejection);
                         }
                     }
 
@@ -183,8 +202,10 @@ namespace ObservableCollections
                     {
                         buffer.AddLast(item);
                     }
-                    NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(span, index));
+                    RaiseCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(span, index), ref rejection);
                 }
+
+                rejection.ThrowIfRejected(nameof(ObservableFixedSizeRingBuffer<T>));
             }
         }
 
@@ -193,6 +214,9 @@ namespace ObservableCollections
             lock (SyncRoot)
             {
                 if (guard.RejectIfNotifying()) return;
+
+                var rejection = default(Rejection);
+
                 if (capacity <= buffer.Count + items.Length)
                 {
                     // calc remove count
@@ -204,7 +228,7 @@ namespace ObservableCollections
                             ys.Add(buffer.RemoveFirst());
                         }
 
-                        NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0));
+                        RaiseCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0), ref rejection);
                     }
                 }
 
@@ -219,7 +243,9 @@ namespace ObservableCollections
                 {
                     buffer.AddLast(item);
                 }
-                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(span, index));
+                RaiseCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(span, index), ref rejection);
+
+                rejection.ThrowIfRejected(nameof(ObservableFixedSizeRingBuffer<T>));
             }
         }
 
@@ -228,6 +254,9 @@ namespace ObservableCollections
             lock (SyncRoot)
             {
                 if (guard.RejectIfNotifying()) return;
+
+                var rejection = default(Rejection);
+
                 if (capacity <= buffer.Count + items.Length)
                 {
                     // calc remove count
@@ -239,7 +268,7 @@ namespace ObservableCollections
                             ys.Add(buffer.RemoveFirst());
                         }
 
-                        NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0));
+                        RaiseCollectionChanged(NotifyCollectionChangedEventArgs<T>.Remove(ys.Span, 0), ref rejection);
                     }
                 }
 
@@ -254,7 +283,9 @@ namespace ObservableCollections
                 {
                     buffer.AddLast(item);
                 }
-                NotifyCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(span, index));
+                RaiseCollectionChanged(NotifyCollectionChangedEventArgs<T>.Add(span, index), ref rejection);
+
+                rejection.ThrowIfRejected(nameof(ObservableFixedSizeRingBuffer<T>));
             }
         }
 

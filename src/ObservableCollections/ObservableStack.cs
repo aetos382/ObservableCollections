@@ -34,8 +34,7 @@ namespace ObservableCollections
 
         void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<T> args)
         {
-            bool rejected;
-            string? rejectedMember;
+            Rejection rejection;
 
             guard.BeginNotification();
             try
@@ -44,13 +43,10 @@ namespace ObservableCollections
             }
             finally
             {
-                rejected = guard.EndNotification(out rejectedMember);
+                rejection = guard.EndNotification();
             }
 
-            if (rejected)
-            {
-                ReentrancyGuard.ThrowRejectedChange(nameof(ObservableStack<T>), rejectedMember);
-            }
+            rejection.ThrowIfRejected(nameof(ObservableStack<T>));
         }
 
         public int Count

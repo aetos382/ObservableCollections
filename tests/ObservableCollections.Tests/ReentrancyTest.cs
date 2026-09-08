@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Threading;
@@ -179,6 +180,34 @@ namespace ObservableCollections.Tests
             act.Should().Throw<CollectionReentrancyException>();
             laterSubscriberNotified.Should().BeFalse();
             queue.Should().Equal(1, 2);
+        }
+
+        /// <summary>
+        /// 満杯の固定長リング バッファへの追加は「押し出しの通知」と「追加の通知」の 2 回に分かれる。
+        /// 前者の配送中に拒否が起きても操作が途中で放棄されず、追加が適用された上で違反が報告されることを
+        /// 確認する。途中で放棄すると、呼び出し元が渡した要素が通知もされないまま失われてしまう。
+        /// </summary>
+        [Fact]
+        public void MutatingFromHandler_DoesNotAbandonAnOperationThatNotifiesTwice()
+        {
+            var buffer = new ObservableFixedSizeRingBuffer<int>(2, new[] { 1, 2 });
+            var actions = new List<NotifyCollectionChangedAction>();
+
+            buffer.CollectionChanged += (in NotifyCollectionChangedEventArgs<int> e) =>
+            {
+                actions.Add(e.Action);
+
+                if (e.Action == NotifyCollectionChangedAction.Remove)
+                {
+                    buffer.Clear();
+                }
+            };
+
+            var act = () => buffer.AddLast(3);
+
+            act.Should().Throw<CollectionReentrancyException>();
+            buffer.Should().Equal(2, 3);
+            actions.Should().Equal(NotifyCollectionChangedAction.Remove, NotifyCollectionChangedAction.Add);
         }
 
         /// <summary>

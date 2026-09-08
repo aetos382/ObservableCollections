@@ -67,8 +67,7 @@ namespace ObservableCollections
 
         void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<T> args)
         {
-            bool rejected;
-            string? rejectedMember;
+            Rejection rejection;
 
             guard.BeginNotification();
             try
@@ -77,13 +76,10 @@ namespace ObservableCollections
             }
             finally
             {
-                rejected = guard.EndNotification(out rejectedMember);
+                rejection = guard.EndNotification();
             }
 
-            if (rejected)
-            {
-                ReentrancyGuard.ThrowRejectedChange(nameof(ObservableList<T>), rejectedMember);
-            }
+            rejection.ThrowIfRejected(nameof(ObservableList<T>));
         }
 
         public void Add(T item)

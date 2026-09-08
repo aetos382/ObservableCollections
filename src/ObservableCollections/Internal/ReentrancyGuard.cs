@@ -12,19 +12,17 @@ namespace ObservableCollections.Internal
     internal struct ReentrancyGuard
     {
         bool notifying;
-        bool rejected;
-        string? rejectedMember;
+        Rejection rejection;
 
         /// <summary>
         /// Returns true when the caller must abandon the change because a notification is being
-        /// delivered. The rejection, and the name of the member that was refused, are remembered until
-        /// the delivery completes.
+        /// delivered. The refusal is remembered until the delivery completes.
         /// </summary>
         public bool RejectIfNotifying([CallerMemberName] string? member = null)
         {
             if (notifying)
             {
-                Reject(member);
+                rejection.Accumulate(new Rejection(member));
                 return true;
             }
 
@@ -36,14 +34,14 @@ namespace ObservableCollections.Internal
         /// elements back to the caller, either as the return value or by writing into a buffer the
         /// caller supplied, and therefore have no way to express a refusal. Unlike
         /// <see cref="RejectIfNotifying"/> this aborts the delivery, so it must not be used where a
-        /// refusal is expressible. The rejection is recorded before throwing, so that a handler that
+        /// refusal is expressible. The refusal is recorded before throwing, so that a handler that
         /// swallows the exception does not hide the violation from the outer call site.
         /// </summary>
         public void ThrowIfNotifying(string typeName, [CallerMemberName] string? member = null)
         {
             if (notifying)
             {
-                Reject(member);
+                rejection.Accumulate(new Rejection(member));
                 ThrowReentrancyNotAllowed(typeName, member);
             }
         }
@@ -54,21 +52,17 @@ namespace ObservableCollections.Internal
         }
 
         /// <summary>
-        /// Ends the notification and consumes the rejection. Returns true when a change was refused
-        /// while the notification was delivered, and reports the member that was refused. A second call
-        /// returns false.
+        /// Ends the notification and hands out the refusal it collected, which is cleared here. A second
+        /// call reports no refusal.
         /// </summary>
-        public bool EndNotification(out string? rejectedMember)
+        public Rejection EndNotification()
         {
             notifying = false;
 
-            var rejected = this.rejected;
-            rejectedMember = this.rejectedMember;
+            var rejection = this.rejection;
+            this.rejection = default;
 
-            this.rejected = false;
-            this.rejectedMember = null;
-
-            return rejected;
+            return rejection;
         }
 
         /// <summary>
@@ -92,14 +86,6 @@ namespace ObservableCollections.Internal
                 $"A CollectionChanged handler tried to change {typeName}{Describe(member)}, and the change " +
                 "was refused. This is reported at the call site whose change was being delivered, because " +
                 "the handler was given no value that could carry the refusal.");
-        }
-
-        // The first violation wins. A handler that carries on after being refused would otherwise
-        // overwrite the member that caused the trouble with whichever one it called last.
-        void Reject(string? member)
-        {
-            rejected = true;
-            rejectedMember ??= member;
         }
 
         static string Describe(string? member)

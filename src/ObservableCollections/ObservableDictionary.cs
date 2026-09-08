@@ -52,8 +52,7 @@ namespace ObservableCollections
 
         void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<KeyValuePair<TKey, TValue>> args)
         {
-            bool rejected;
-            string? rejectedMember;
+            Rejection rejection;
 
             guard.BeginNotification();
             try
@@ -62,13 +61,10 @@ namespace ObservableCollections
             }
             finally
             {
-                rejected = guard.EndNotification(out rejectedMember);
+                rejection = guard.EndNotification();
             }
 
-            if (rejected)
-            {
-                ReentrancyGuard.ThrowRejectedChange(nameof(ObservableDictionary<TKey, TValue>), rejectedMember);
-            }
+            rejection.ThrowIfRejected(nameof(ObservableDictionary<TKey, TValue>));
         }
 
         public TValue this[TKey key]
