@@ -35,6 +35,7 @@ namespace ObservableCollections
         void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<T> args)
         {
             bool rejected;
+            string? rejectedMember;
 
             guard.BeginNotification();
             try
@@ -43,12 +44,12 @@ namespace ObservableCollections
             }
             finally
             {
-                rejected = guard.EndNotification();
+                rejected = guard.EndNotification(out rejectedMember);
             }
 
             if (rejected)
             {
-                ReentrancyGuard.ThrowReentrancyNotAllowed(nameof(ObservableStack<T>));
+                ReentrancyGuard.ThrowRejectedChange(nameof(ObservableStack<T>), rejectedMember);
             }
         }
 
@@ -174,7 +175,8 @@ namespace ObservableCollections
         {
             lock (SyncRoot)
             {
-                if (guard.RejectIfNotifying()) return;
+                // Refusing would leave dest unwritten, which the caller cannot tell from a success.
+                guard.ThrowIfNotifying(nameof(ObservableStack<T>));
                 for (int i = 0; i < dest.Length; i++)
                 {
                     dest[i] = stack.Pop();

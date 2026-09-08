@@ -55,6 +55,7 @@ namespace ObservableCollections
         void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<T> args)
         {
             bool rejected;
+            string? rejectedMember;
 
             guard.BeginNotification();
             try
@@ -63,12 +64,12 @@ namespace ObservableCollections
             }
             finally
             {
-                rejected = guard.EndNotification();
+                rejected = guard.EndNotification(out rejectedMember);
             }
 
             if (rejected)
             {
-                ReentrancyGuard.ThrowReentrancyNotAllowed(nameof(ObservableHashSet<T>));
+                ReentrancyGuard.ThrowRejectedChange(nameof(ObservableHashSet<T>), rejectedMember);
             }
         }
 

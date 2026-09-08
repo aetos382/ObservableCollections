@@ -21,13 +21,22 @@ namespace ObservableCollections
         /// that have not been called yet. Such a change is therefore refused: the handler simply sees
         /// nothing happen (the methods that return a value report failure), and once the notification has
         /// been delivered to every handler, a <see cref="CollectionReentrancyException"/> is thrown at
-        /// the call site that made the original change. The members that return the removed element
-        /// (<c>Dequeue</c>, <c>Pop</c>, <c>RemoveFirst</c>, <c>RemoveLast</c>) cannot report a refusal
-        /// through their return value, so they throw immediately and the delivery is cut short.
-        /// The rule holds unconditionally, but it can only be enforced while the notification is being
-        /// raised synchronously. When the notification reaches a handler through an
-        /// <see cref="ICollectionEventDispatcher"/>, the source collection is no longer notifying, so a
-        /// change made from that handler is applied instead of being refused.
+        /// the call site that made the original change. The members that hand the removed elements back
+        /// to the caller cannot report a refusal that way, so they throw immediately and the delivery is
+        /// cut short: <c>Dequeue</c>, <c>Pop</c>, <c>RemoveFirst</c> and <c>RemoveLast</c> return the
+        /// element, and the <c>Span&lt;T&gt;</c> overloads of <c>DequeueRange</c> and <c>PopRange</c>
+        /// write into a buffer the caller supplied, which a refusal would leave untouched.
+        /// The rule holds unconditionally, but whether it can be enforced depends on when the handler
+        /// runs. A view of this collection re-raises the change on its own
+        /// <see cref="INotifyCollectionChanged.CollectionChanged"/> through an
+        /// <see cref="ICollectionEventDispatcher"/>. The default dispatcher invokes the handler inline,
+        /// and <see cref="SynchronizationContextCollectionEventDispatcher"/> does the same when it is
+        /// already on the target context; in both cases the handler still runs inside this
+        /// notification, so a change made there is refused as described above. Only a dispatcher that
+        /// posts the notification elsewhere, to another thread or to a later turn of the message loop,
+        /// runs the handler after this collection has finished notifying, and only then is the change
+        /// applied instead of refused. It is still a change made from a notification handler, and none
+        /// of the guarantees above hold for it.
         /// </remarks>
         event NotifyCollectionChangedEventHandler<T>? CollectionChanged;
         object SyncRoot { get; }

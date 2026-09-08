@@ -1,24 +1,30 @@
+using System.Runtime.CompilerServices;
+
 namespace ObservableCollections.Internal
 {
     // Changing the collection while CollectionChanged is being raised reorders the notifications
     // delivered to the remaining subscribers, which desynchronizes them from the collection.
     // The change is rejected, but it is reported only after every subscriber has received the
     // notification, so that a subscriber that observes the rules is not left behind by an aborted
-    // delivery.
+    // delivery. Because the report happens after the refused call has already returned, the guard
+    // remembers which member was refused; otherwise the exception would surface at an innocent call
+    // site with nothing to identify the handler that caused it.
     internal struct ReentrancyGuard
     {
         bool notifying;
         bool rejected;
+        string? rejectedMember;
 
         /// <summary>
         /// Returns true when the caller must abandon the change because a notification is being
-        /// delivered. The rejection is remembered until the delivery completes.
+        /// delivered. The rejection, and the name of the member that was refused, are remembered until
+        /// the delivery completes.
         /// </summary>
-        public bool RejectIfNotifying()
+        public bool RejectIfNotifying([CallerMemberName] string? member = null)
         {
             if (notifying)
             {
-                rejected = true;
+                Reject(member);
                 return true;
             }
 
@@ -26,15 +32,19 @@ namespace ObservableCollections.Internal
         }
 
         /// <summary>
-        /// Throws when a notification is being delivered. For the members that return a value and
-        /// therefore cannot express a refusal. Unlike <see cref="RejectIfNotifying"/> this aborts the
-        /// delivery, so it must not be used where a refusal is expressible.
+        /// Throws when a notification is being delivered. For the members that hand the removed
+        /// elements back to the caller, either as the return value or by writing into a buffer the
+        /// caller supplied, and therefore have no way to express a refusal. Unlike
+        /// <see cref="RejectIfNotifying"/> this aborts the delivery, so it must not be used where a
+        /// refusal is expressible. The rejection is recorded before throwing, so that a handler that
+        /// swallows the exception does not hide the violation from the outer call site.
         /// </summary>
-        public void ThrowIfNotifying(string typeName)
+        public void ThrowIfNotifying(string typeName, [CallerMemberName] string? member = null)
         {
             if (notifying)
             {
-                ThrowReentrancyNotAllowed(typeName);
+                Reject(member);
+                ThrowReentrancyNotAllowed(typeName, member);
             }
         }
 
@@ -43,20 +53,58 @@ namespace ObservableCollections.Internal
             notifying = true;
         }
 
-        /// <summary>Returns true when a change was rejected while the notification was delivered.</summary>
-        public bool EndNotification()
+        /// <summary>
+        /// Ends the notification and consumes the rejection. Returns true when a change was refused
+        /// while the notification was delivered, and reports the member that was refused. A second call
+        /// returns false.
+        /// </summary>
+        public bool EndNotification(out string? rejectedMember)
         {
             notifying = false;
 
             var rejected = this.rejected;
+            rejectedMember = this.rejectedMember;
+
             this.rejected = false;
+            this.rejectedMember = null;
 
             return rejected;
         }
 
-        public static void ThrowReentrancyNotAllowed(string typeName)
+        /// <summary>
+        /// Reports the refusal to the handler that caused it, which aborts the delivery. Only for the
+        /// members that cannot express a refusal any other way.
+        /// </summary>
+        public static void ThrowReentrancyNotAllowed(string typeName, string? member)
         {
-            throw new CollectionReentrancyException($"Cannot change {typeName} during a CollectionChanged event.");
+            throw new CollectionReentrancyException(
+                $"Cannot change {typeName} from a CollectionChanged handler{Describe(member)}.");
+        }
+
+        /// <summary>
+        /// Reports the refusal to the call site whose change was being delivered. That call site did
+        /// nothing wrong; it is the only place left to report to, because the refused call has already
+        /// returned to the handler without a value that could carry the refusal.
+        /// </summary>
+        public static void ThrowRejectedChange(string typeName, string? member)
+        {
+            throw new CollectionReentrancyException(
+                $"A CollectionChanged handler tried to change {typeName}{Describe(member)}, and the change " +
+                "was refused. This is reported at the call site whose change was being delivered, because " +
+                "the handler was given no value that could carry the refusal.");
+        }
+
+        // The first violation wins. A handler that carries on after being refused would otherwise
+        // overwrite the member that caused the trouble with whichever one it called last.
+        void Reject(string? member)
+        {
+            rejected = true;
+            rejectedMember ??= member;
+        }
+
+        static string Describe(string? member)
+        {
+            return member == null ? "" : $" ({member} was called)";
         }
     }
 }

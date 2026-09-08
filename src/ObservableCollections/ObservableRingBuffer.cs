@@ -17,6 +17,7 @@ namespace ObservableCollections
         void NotifyCollectionChanged(in NotifyCollectionChangedEventArgs<T> args)
         {
             bool rejected;
+            string? rejectedMember;
 
             guard.BeginNotification();
             try
@@ -25,12 +26,12 @@ namespace ObservableCollections
             }
             finally
             {
-                rejected = guard.EndNotification();
+                rejected = guard.EndNotification(out rejectedMember);
             }
 
             if (rejected)
             {
-                ReentrancyGuard.ThrowReentrancyNotAllowed(nameof(ObservableRingBuffer<T>));
+                ReentrancyGuard.ThrowRejectedChange(nameof(ObservableRingBuffer<T>), rejectedMember);
             }
         }
 
