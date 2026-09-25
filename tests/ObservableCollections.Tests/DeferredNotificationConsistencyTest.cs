@@ -5,9 +5,9 @@ using System.Threading.Tasks;
 namespace ObservableCollections.Tests;
 
 /// <summary>
-/// ICollectionEventDispatcher が通知を UI スレッドへ遅延させる場合、
-/// UI スレッドが通知を処理する時点で通知の内容とコレクションの状態が一致していなければならない。
-/// 内部リストの更新だけが変更したスレッド上で先に進むと、この一致が崩れる。
+/// When an ICollectionEventDispatcher defers notifications to the UI thread, the content of each
+/// notification must match the state of the collection at the moment the UI thread handles it.
+/// If only the internal list update runs ahead on the mutating thread, that consistency breaks.
 ///
 /// https://github.com/Cysharp/ObservableCollections/issues/115
 /// </summary>
@@ -24,14 +24,14 @@ public class DeferredNotificationConsistencyTest
 
         var tracker = new NotifyCollectionChangedContractTracker<string>(notify);
 
-        // Wait することで「UI スレッドが通知を処理する前に両方の変更が完了している」状態を確定させる。
+        // Waiting guarantees that both changes complete before the UI thread handles the notifications.
         Task.Run(() =>
         {
             list.Add(10);
             list.RemoveAt(0);
         }).Wait();
 
-        // 通知が遅延していることの確認。これが 0 ならテストは何も検証していない。
+        // Confirms that the notifications are deferred. If this were 0, the test would verify nothing.
         dispatcher.PendingCount.Should().Be(2);
 
         dispatcher.Pump();
@@ -65,8 +65,8 @@ public class DeferredNotificationConsistencyTest
 
         Task.Run(() =>
         {
-            list.Insert(0, 6); // フィルタを通るので view の先頭に入る
-            list.RemoveAt(4);  // 元の 4。view の末尾から消える
+            list.Insert(0, 6); // Passes the filter, so it goes to the head of the view
+            list.RemoveAt(4);  // The original 4; it disappears from the tail of the view
         }).Wait();
 
         dispatcher.PendingCount.Should().Be(2);
@@ -79,8 +79,8 @@ public class DeferredNotificationConsistencyTest
     }
 
     /// <summary>
-    /// 比較用。UI スレッド上で変更すれば SynchronizationContextCollectionEventDispatcher は
-    /// 同期発火を選ぶので破綻しない。修正後もこちらが壊れないことを保証する。
+    /// For comparison. When the change is made on the UI thread, SynchronizationContextCollectionEventDispatcher
+    /// chooses to raise synchronously, so nothing breaks. Ensures this case keeps working after the fix.
     /// </summary>
     [Fact]
     public void UiThreadMutation()
@@ -88,9 +88,9 @@ public class DeferredNotificationConsistencyTest
         var context = new QueuedSynchronizationContext();
         var previous = SynchronizationContext.Current;
 
-        // SynchronizationContextCollectionEventDispatcher は静的初期化で SynchronizationContext.Current を
-        // 要求する (ICollectionEventDispatcher.cs の static readonly Current) ため、
-        // この型に触る前に設定しておく必要がある。
+        // SynchronizationContextCollectionEventDispatcher requires SynchronizationContext.Current in its
+        // static initializer (the static readonly Current in ICollectionEventDispatcher.cs), so it has to
+        // be set before this type is touched.
         SynchronizationContext.SetSynchronizationContext(context);
         try
         {
@@ -103,7 +103,7 @@ public class DeferredNotificationConsistencyTest
             list.Add(10);
             list.RemoveAt(0);
 
-            // 同期発火が選ばれたので、キューには何も溜まっていない。
+            // Synchronous raising was chosen, so nothing is queued.
             context.PendingCount.Should().Be(0);
 
             tracker.Actions.Should().Equal(new[]

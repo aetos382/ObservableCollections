@@ -3,8 +3,10 @@ using System.Collections.Generic;
 namespace ObservableCollections.Tests;
 
 /// <summary>
-/// UI スレッドのディスパッチャーの代替。Post された通知はキューに溜まるだけで、Pump を呼ぶまで発火しない。
-/// SynchronizationContext に依存しないので、テストの実行順序やスレッドの状態に左右されない。
+/// A stand-in for a UI thread dispatcher. Posted notifications only pile up in the queue and are not
+/// raised until Pump is called.
+/// It does not depend on SynchronizationContext, so it is not affected by the test execution order or
+/// the state of the thread.
 /// </summary>
 internal sealed class QueuedCollectionEventDispatcher : ICollectionEventDispatcher
 {
@@ -30,7 +32,7 @@ internal sealed class QueuedCollectionEventDispatcher : ICollectionEventDispatch
     }
 
     /// <summary>
-    /// メッセージ ループ相当。溜まっている通知を順に発火する。
+    /// The equivalent of a message loop. Raises the queued notifications in order.
     /// </summary>
     public void Pump()
     {

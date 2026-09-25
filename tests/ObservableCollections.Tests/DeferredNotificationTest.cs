@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 namespace ObservableCollections.Tests;
 
 /// <summary>
-/// ICollectionEventDispatcher が通知を遅延させる場合、購読者から見えるリストの内容も
-/// 通知の発火に合わせて遅延しなければならない (issue #115)。
+/// When an ICollectionEventDispatcher defers notifications, the content of the list as seen by subscribers
+/// must also be deferred until the notifications are raised (issue #115).
 /// </summary>
 public class DeferredNotificationTest
 {
@@ -28,9 +28,11 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// フィルターの判定が追加時と削除時で食い違うと、ビューに入っていない要素の削除通知が流れてくる。
-    /// ビューの内容が変わっていないのだから、購読者に通知してはならないことを確認する。
-    /// インデックスが不明な (-1 の) 通知を積むと、発火時に適用できず内容の整合が永久に崩れる。
+    /// When the filter evaluates differently on add and on remove, a remove notification arrives for an
+    /// element that is not in the view.
+    /// Verifies that subscribers are not notified, since the content of the view has not changed.
+    /// Queuing a notification with an unknown index (-1) could not be applied when raised, and the
+    /// content would stay inconsistent forever.
     /// </summary>
     [Fact]
     public void RemoveOfItemMissingFromViewIsNotNotified()
@@ -43,15 +45,15 @@ public class DeferredNotificationTest
         set.Add(item);
 
         using var view = set.CreateView(x => x);
-        view.AttachFilter(x => x.Visible); // item は除外されるのでビューに入らない
+        view.AttachFilter(x => x.Visible); // item is filtered out, so it is not in the view
 
         using var notify = view.ToNotifyCollectionChanged(dispatcher);
 
         var tracker = new NotifyCollectionChangedContractTracker<Flagged>(notify);
 
-        item.Visible = true; // ビューは再評価しないので内容は空のまま
+        item.Visible = true; // The view does not re-evaluate, so it stays empty
 
-        set.Remove(item); // 削除時の判定は true なので Remove の通知が流れる
+        set.Remove(item); // The filter is true on remove, so a Remove notification comes through
 
         dispatcher.Pump();
 
@@ -61,7 +63,7 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// フィルタを持たないビュー (NonFilteredSynchronizedViewList) でも同じ保証が必要。
+    /// The same guarantee is required for a view without a filter (NonFilteredSynchronizedViewList).
     /// </summary>
     [Fact]
     public void NonFiltered_WorkerThreadMutation()
@@ -90,8 +92,9 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// 購読者がいなければ整合させるべき通知が無いので、その場で反映してよい。
-    /// キューに何も積まないので、後から購読しても過去の通知は流れてこない。
+    /// Without subscribers there is no notification to stay consistent with, so changes may be applied
+    /// immediately.
+    /// Nothing is queued, so a later subscriber does not receive past notifications.
     /// </summary>
     [Fact]
     public void NoSubscriber_AppliedImmediately()
@@ -107,7 +110,7 @@ public class DeferredNotificationTest
         dispatcher.PendingCount.Should().Be(0);
         notify.Should().Equal(new[] { "$10" });
 
-        // 購読を始めた後の変更は遅延する。
+        // Changes after the subscription starts are deferred.
         var tracker = new NotifyCollectionChangedContractTracker<string>(notify);
 
         Task.Run(() => list.Add(20)).Wait();
@@ -123,8 +126,8 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// 購読を解除しても、キューに残っている通知が先に発火されるまでは遅延を続ける。
-    /// 途中で同期適用に切り替えると、適用の順序が入れ替わって内容が壊れる。
+    /// Even after unsubscribing, deferral continues until the notifications left in the queue are raised.
+    /// Switching to immediate application midway would reorder the applications and corrupt the content.
     /// </summary>
     [Fact]
     public void Unsubscribed_KeepsDeferringWhileNotificationIsPending()
@@ -148,7 +151,7 @@ public class DeferredNotificationTest
 
         Task.Run(() => list.Insert(0, 3)).Wait();
 
-        // 購読者はいないが、先の通知が未処理なので順序を保つために積む。
+        // There is no subscriber, but the earlier notification is still pending, so this is queued to keep the order.
         dispatcher.PendingCount.Should().Be(2);
         notify.Should().Equal(new[] { "$1" });
 
@@ -158,7 +161,8 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// 遅延中の位置指定書き込みは、見えているインデックスを未処理の変更で読み替えてからソースへ渡す。
+    /// A positional write during deferral translates the visible index through the pending changes before
+    /// passing it to the source.
     /// </summary>
     [Fact]
     public void RemoveAtDuringPendingNotification()
@@ -179,8 +183,8 @@ public class DeferredNotificationTest
 
         dispatcher.PendingCount.Should().Be(1);
 
-        // 見えているのは ["$1", "$2", "$3", "$4"] なので、[1] は "$2"。
-        // ソースでは先頭に 0 が入っているのでインデックス 2 にある。
+        // The visible content is ["$1", "$2", "$3", "$4"], so [1] is "$2".
+        // In the source, 0 has been inserted at the head, so it is at index 2.
         notify.RemoveAt(1);
 
         list.Should().Equal(new[] { 0, 1, 3, 4 });
@@ -207,7 +211,7 @@ public class DeferredNotificationTest
 
         Task.Run(() => list.Insert(0, 0)).Wait();
 
-        // 見えている ["$1", "$2", "$3"] の [1] の位置、つまり "$2" の直前へ。
+        // At [1] of the visible ["$1", "$2", "$3"], that is, right before "$2".
         notify.Insert(1, "$9");
 
         list.Should().Equal(new[] { 0, 1, 9, 2, 3 });
@@ -219,8 +223,8 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// 遅延中に位置指定書き込みをしても、購読者から見える内容が通知から再構築した内容と
-    /// 一致し続けること、および通知が余分に増えないことを確認する。
+    /// Verifies that a positional write during deferral keeps the content seen by subscribers consistent
+    /// with the content reconstructed from the notifications, and does not add extra notifications.
     /// </summary>
     [Fact]
     public void SetDuringPendingNotification()
@@ -238,7 +242,7 @@ public class DeferredNotificationTest
 
         Task.Run(() => list.Insert(0, 0)).Wait();
 
-        // 見えている ["$1", "$2", "$3"] の [1]、つまり "$2" を差し替える。
+        // Replaces [1] of the visible ["$1", "$2", "$3"], that is, "$2".
         notify[1] = "$9";
 
         list.Should().Equal(new[] { 0, 1, 9, 3 });
@@ -248,13 +252,14 @@ public class DeferredNotificationTest
         tracker.Violations.Should().BeEmpty();
         notify.Should().Equal(new[] { "$0", "$1", "$9", "$3" });
 
-        // ソース由来の Replace と二重に通知しない。
+        // Does not notify twice alongside the Replace from the source.
         tracker.Actions.Should().Equal(new[] { NotifyCollectionChangedAction.Add, NotifyCollectionChangedAction.Replace });
     }
 
     /// <summary>
-    /// converter がソースへの書き込みを拒否してソース由来の Replace 通知が出ない場合も、
-    /// 購読者から見える内容が通知から再構築した内容と一致し続けることを確認する。
+    /// Verifies that even when the converter rejects the write to the source and no Replace comes from
+    /// the source, the content seen by subscribers stays consistent with the content reconstructed from
+    /// the notifications.
     /// </summary>
     [Fact]
     public void SetRejectedByConverterDuringPendingNotification()
@@ -283,7 +288,7 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// フィルタ付きのビューでも、逆引き (View インデックス → ソース インデックス) と組み合わせて機能する。
+    /// Also works on a filtered view, combined with the reverse lookup (view index → source index).
     /// </summary>
     [Fact]
     public void RemoveAtDuringPendingNotification_Filter()
@@ -303,11 +308,11 @@ public class DeferredNotificationTest
 
         var tracker = new NotifyCollectionChangedContractTracker<string>(notify);
 
-        Task.Run(() => list.Insert(0, 6)).Wait(); // フィルタを通るので view の先頭に入る
+        Task.Run(() => list.Insert(0, 6)).Wait(); // Passes the filter, so it goes to the head of the view
 
         dispatcher.PendingCount.Should().Be(1);
 
-        // 見えているのは ["$2", "$4"] なので、[1] は "$4"。
+        // The visible content is ["$2", "$4"], so [1] is "$4".
         notify.RemoveAt(1);
 
         list.Should().Equal(new[] { 6, 1, 2, 3 });
@@ -319,7 +324,8 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// 対象の要素自体が未処理の削除で消えている場合は、読み替えようがないので失敗させる。
+    /// When the target element itself has been removed by a pending change, there is nothing to translate
+    /// to, so the operation fails.
     /// </summary>
     [Fact]
     public void RemoveAtDuringPendingNotification_TargetIsAlreadyRemoved()
@@ -335,9 +341,9 @@ public class DeferredNotificationTest
 
         _ = new NotifyCollectionChangedContractTracker<string>(notify);
 
-        Task.Run(() => list.RemoveAt(1)).Wait(); // 2 が消える
+        Task.Run(() => list.RemoveAt(1)).Wait(); // 2 is removed
 
-        // 見えている ["$1", "$2", "$3"] の [1] は既に存在しない。
+        // [1] of the visible ["$1", "$2", "$3"] no longer exists.
         notify.Invoking(x => x.RemoveAt(1))
             .Should().Throw<InvalidOperationException>()
             .WithMessage("The element at index 1 has been removed*");
@@ -346,8 +352,9 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// 未処理の Reset があるとどのインデックスも読み替えられない。
-    /// 特定の要素が消えた場合と混同させず、インデックスを変えれば通ると誤解させないことを確認する。
+    /// With a pending Reset, no index can be translated.
+    /// Verifies that this is not confused with the removal of a specific element, so that callers are
+    /// not misled into thinking a different index would succeed.
     /// </summary>
     [Fact]
     public void WriteDuringPendingReset()
@@ -368,7 +375,7 @@ public class DeferredNotificationTest
             list.Add(3);
         }).Wait();
 
-        // 挿入位置であっても Reset は読み替えられない。
+        // Even an insertion position cannot be translated across a Reset.
         notify.Invoking(x => x.RemoveAt(0))
             .Should().Throw<InvalidOperationException>()
             .WithMessage("The collection has been reset*");
@@ -385,7 +392,7 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// 見えているリストの末尾への挿入は、未処理の変更があっても末尾追加として扱われる。
+    /// An insertion at the tail of the visible list is treated as an append even with pending changes.
     /// </summary>
     [Fact]
     public void InsertAtTailDuringPendingNotification()
@@ -402,7 +409,7 @@ public class DeferredNotificationTest
 
         Task.Run(() => list.Insert(0, 0)).Wait();
 
-        // 見えているのは ["$1", "$2"] なので、[2] は末尾。
+        // The visible content is ["$1", "$2"], so [2] is the tail.
         notify.Insert(2, "$9");
 
         list.Should().Equal(new[] { 0, 1, 2, 9 });
@@ -414,9 +421,9 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// 範囲外のインデックスの扱いは、ディスパッチャーの有無で変わってはならない。
-    /// 呼び出し元が渡した -1 を、追跡不能を表す内部の -1 と混同すると
-    /// ArgumentOutOfRangeException ではなく InvalidOperationException になってしまう。
+    /// The handling of out-of-range indices must not depend on whether there is a dispatcher.
+    /// Confusing a -1 passed by the caller with the internal -1 that means "untrackable" would result in
+    /// InvalidOperationException instead of ArgumentOutOfRangeException.
     /// </summary>
     [Fact]
     public void OutOfRangeIndexIsRejected()
@@ -505,8 +512,9 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// 同じディスパッチャーが非同期発火と同期発火を混在させる場合。
-    /// UI スレッド上の変更は同期発火するが、その前に積まれている通知を追い越してはならない。
+    /// When the same dispatcher mixes asynchronous and synchronous raising.
+    /// A change on the UI thread is raised synchronously, but it must not overtake the notifications
+    /// queued before it.
     /// </summary>
     [Fact]
     public void SynchronousNotificationDoesNotOvertakePendingOne()
@@ -529,13 +537,13 @@ public class DeferredNotificationTest
 
         try
         {
-            Task.Run(() => list.Insert(0, 2)).Wait(); // 別スレッドなので遅延
+            Task.Run(() => list.Insert(0, 2)).Wait(); // Another thread, so deferred
 
             ui.PendingCount.Should().Be(1);
 
-            ui.Invoke(() => list.Insert(0, 3)); // UI スレッドなので同期発火
+            ui.Invoke(() => list.Insert(0, 3)); // The UI thread, so raised synchronously
 
-            // 遅延していた分も同時に処理されるので、二つとも発火し終わっている。
+            // The deferred one is processed at the same time, so both have been raised.
             tracker.Actions.Should().Equal(new[]
             {
                 NotifyCollectionChangedAction.Add,
@@ -545,7 +553,7 @@ public class DeferredNotificationTest
             tracker.Violations.Should().BeEmpty();
             notify.Should().Equal(new[] { "$3", "$2", "$1" });
 
-            ui.Pump(); // 積まれたままの通知は無い
+            ui.Pump(); // No notification is left in the queue
 
             tracker.Actions.Should().HaveCount(2);
         }
@@ -556,9 +564,9 @@ public class DeferredNotificationTest
     }
 
     /// <summary>
-    /// 購読者が例外を投げても、まだ発火していない通知を捨ててはならない。
-    /// 別スレッドの変更が積まれている状態で UI スレッドから変更すると、古い通知も同じ呼び出しの中で
-    /// 発火されるため、そこで例外が出ると後続の通知が発火されないまま取り残される。
+    /// Even when a subscriber throws an exception, notifications that have not been raised yet must not be dropped.
+    /// A change on the UI thread while changes from another thread are queued raises the older notifications
+    /// within the same call, so an exception there would leave the subsequent notifications unraised.
     /// </summary>
     [Fact]
     public void SubscriberExceptionDoesNotDropRemainingNotifications()
@@ -575,7 +583,7 @@ public class DeferredNotificationTest
 
         var thrownCount = 0;
 
-        // Reset で NewItems が null になることを考えていないハンドラー相当。
+        // Mimics a handler that does not expect NewItems to be null on Reset.
         void Thrower(object sender, NotifyCollectionChangedEventArgs e)
         {
             if (e.Action == NotifyCollectionChangedAction.Reset)
@@ -589,14 +597,14 @@ public class DeferredNotificationTest
         {
             notify = view.ToNotifyCollectionChanged(new SynchronizationContextCollectionEventDispatcher(ui.Context));
 
-            // 全通知を記録したいので tracker を先に購読する。
+            // The tracker subscribes first so that it records every notification.
             tracker = new NotifyCollectionChangedContractTracker<string>(notify);
             notify.CollectionChanged += Thrower;
         });
 
         try
         {
-            Task.Run(() => list.Clear()).Wait(); // 別スレッドなので Reset が積まれる
+            Task.Run(() => list.Clear()).Wait(); // Another thread, so the Reset is queued
 
             ui.PendingCount.Should().Be(1);
 
@@ -606,7 +614,7 @@ public class DeferredNotificationTest
             {
                 try
                 {
-                    list.Add(2); // UI スレッドなので同期発火。積まれていた Reset もここで発火される
+                    list.Add(2); // The UI thread, so raised synchronously. The queued Reset is also raised here
                 }
                 catch (Exception ex)
                 {
@@ -614,11 +622,11 @@ public class DeferredNotificationTest
                 }
             });
 
-            // Reset のハンドラーが投げた例外は、無関係な Add の呼び出し元に出てくる。
+            // The exception thrown by the Reset handler surfaces at the caller of the unrelated Add.
             thrownCount.Should().Be(1);
             error.Should().BeOfType<InvalidOperationException>();
 
-            // Add の通知と適用が失われてはならない。
+            // Neither the notification nor the application of the Add may be lost.
             tracker.Actions.Should().Equal(new[]
             {
                 NotifyCollectionChangedAction.Reset,
@@ -628,7 +636,7 @@ public class DeferredNotificationTest
             tracker.Violations.Should().BeEmpty();
             notify.Should().Equal(new[] { "$2" });
 
-            ui.Pump(); // 取り残された通知は無い
+            ui.Pump(); // No notification is left behind
 
             tracker.Actions.Should().HaveCount(2);
         }

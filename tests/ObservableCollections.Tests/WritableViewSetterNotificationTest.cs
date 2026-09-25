@@ -5,12 +5,12 @@ using System.Collections.Specialized;
 namespace ObservableCollections.Tests;
 
 /// <summary>
-/// 書き込み可能ビューのセッターは、可視内容を変えたなら必ず通知を伴わなければならない。
-/// ソースへ書き込む場合はソース由来の Replace がその通知になり、書き込まない場合はセッター自身が
-/// 通知を出す必要がある。
+/// Whenever the setter of a writable view changes the visible content, it must come with a notification.
+/// When it writes to the source, the Replace from the source is that notification; when it does not,
+/// the setter itself has to raise one.
 ///
-/// T と TView を別の型にして、converter をスキップするショートカット
-/// (typeof(T) == typeof(TView)) と絡まないようにしている。
+/// T and TView are different types so that the shortcut that skips the converter
+/// (typeof(T) == typeof(TView)) does not interfere.
 /// </summary>
 public class WritableViewSetterNotificationTest
 {
@@ -35,9 +35,10 @@ public class WritableViewSetterNotificationTest
     }
 
     /// <summary>
-    /// converter がソースへの書き込みを拒否した (setValue == false) とき、ソース由来の Replace は来ない。
-    /// セッターが可視内容だけを書き換えて無通知で済ませてしまうと、購読者は変更を知る手段がない。
-    /// ディスパッチャー未指定の場合も通知が出ることを確認する。
+    /// When the converter rejects the write to the source (setValue == false), no Replace comes from the source.
+    /// If the setter only rewrote the visible content without notifying, subscribers would have no way to
+    /// learn about the change.
+    /// Verifies that the notification is raised even when no dispatcher is specified.
     /// </summary>
     [Fact]
     public void ConverterRejectedWriteRaisesReplaceWithoutDispatcher()
@@ -52,7 +53,7 @@ public class WritableViewSetterNotificationTest
 
         bindable[1] = "$99";
 
-        list.Should().Equal(new[] { 1, 2, 3 }); // 拒否されたのでソースは変わらない
+        list.Should().Equal(new[] { 1, 2, 3 }); // Rejected, so the source is unchanged
         bindable.Should().Equal(new[] { "$1", "$99", "$3" });
 
         events.Should().HaveCount(1);
@@ -63,7 +64,7 @@ public class WritableViewSetterNotificationTest
     }
 
     /// <summary>
-    /// フィルターなしのビュー (NonFilteredSynchronizedViewList) でも同じ保証が必要。
+    /// The same guarantee is required for a view without a filter (NonFilteredSynchronizedViewList).
     /// </summary>
     [Fact]
     public void ConverterRejectedWriteRaisesReplaceOnNonFilteredView()
@@ -86,8 +87,8 @@ public class WritableViewSetterNotificationTest
     }
 
     /// <summary>
-    /// ディスパッチャーがある場合、拒否された書き込みの通知も他の通知と同様に遅延され、
-    /// 発火するまで可視内容は変わらない。
+    /// With a dispatcher, the notification for a rejected write is deferred like any other notification,
+    /// and the visible content does not change until it is raised.
     /// </summary>
     [Fact]
     public void ConverterRejectedWriteIsDeferredWithDispatcher()
@@ -102,7 +103,7 @@ public class WritableViewSetterNotificationTest
 
         bindable[1] = "$99";
 
-        bindable.Should().Equal(new[] { "$1", "$2", "$3" }); // 通知前なので変わっていない
+        bindable.Should().Equal(new[] { "$1", "$2", "$3" }); // Not notified yet, so unchanged
         events.Should().BeEmpty();
 
         dispatcher.Pump();
@@ -114,10 +115,12 @@ public class WritableViewSetterNotificationTest
     }
 
     /// <summary>
-    /// ソースへの書き込みが失敗した場合、その Replace 通知は届かない。
-    /// セッターが先に可視内容を書き換えていると、通知のない変更が残ってしまう。
-    /// ここではビューより先に登録された購読者を throw させて、ソースの通知がビューに届かない状況を作る。
-    /// (ソース自体はこの時点で既に書き換わっており、ビューとの乖離は別の既存の問題。)
+    /// When the write to the source fails, its Replace notification never arrives.
+    /// If the setter had rewritten the visible content beforehand, an unnotified change would be left behind.
+    /// Here a subscriber registered before the view throws an exception, so that the source's notification
+    /// never reaches the view.
+    /// (The source itself has already been rewritten at this point; its divergence from the view is a
+    /// separate, pre-existing issue.)
     /// </summary>
     [Fact]
     public void FailedSourceWriteDoesNotChangeVisibleContentSilently()
@@ -140,7 +143,7 @@ public class WritableViewSetterNotificationTest
     }
 
     /// <summary>
-    /// フィルター付きのビューでも同様。ここでは View インデックスとソース インデックスがずれる。
+    /// The same applies to a filtered view. Here the view index and the source index differ.
     /// </summary>
     [Fact]
     public void FailedSourceWriteDoesNotChangeVisibleContentSilentlyOnFilteredView()
@@ -151,7 +154,7 @@ public class WritableViewSetterNotificationTest
         list.Add(3);
         list.Add(4);
 
-        // ビューより先に登録する必要がある。後だとビューのハンドラーが先に走ってしまう。
+        // This has to be registered before the view; otherwise the view's handler runs first.
         list.CollectionChanged += (in NotifyCollectionChangedEventArgs<int> _) => throw new InvalidOperationException("boom");
 
         using var view = list.CreateWritableView(x => $"${x}");
@@ -163,7 +166,7 @@ public class WritableViewSetterNotificationTest
         var events = new List<NotifyCollectionChangedEventArgs>();
         bindable.CollectionChanged += (_, e) => events.Add(e);
 
-        // View は ["$2", "$4"]。その [1] はソース インデックス 3。
+        // The view is ["$2", "$4"]. Its [1] is source index 3.
         bindable.Invoking(x => x[1] = "$99").Should().Throw<InvalidOperationException>();
 
         dispatcher.Pump();

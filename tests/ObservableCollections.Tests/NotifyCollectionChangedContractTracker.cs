@@ -7,10 +7,11 @@ using System.Linq;
 namespace ObservableCollections.Tests;
 
 /// <summary>
-/// 「CollectionChanged の通知だけを見ている観測者は、コレクションの中身を完全に再構築できる」
-/// という契約を検証する。
-/// 受け取った通知を影武者リストに適用し、その結果が実際のコレクションと一致するかを毎回確認する。
-/// 個々のインデックスを目で追う必要がなく、インデックスのズレも Count のズレもこれ一つで捕まる。
+/// Verifies the contract that "an observer that only watches the CollectionChanged notifications can fully
+/// reconstruct the content of the collection".
+/// Applies every received notification to a shadow list and checks each time that the result matches
+/// the actual collection.
+/// There is no need to trace individual indices by eye; this alone catches both index and Count mismatches.
 /// </summary>
 internal sealed class NotifyCollectionChangedContractTracker<T>
 {
@@ -21,8 +22,9 @@ internal sealed class NotifyCollectionChangedContractTracker<T>
     {
         this.target = target;
 
-        // 購読開始時点のスナップショット。
-        // ToList / AddRange は ICollection<T>.CopyTo を使うが、これは NotSupportedException を投げるので使えない。
+        // A snapshot at the time the subscription starts.
+        // ToList / AddRange cannot be used because they call ICollection<T>.CopyTo, which throws
+        // NotSupportedException.
         this.shadow = new List<T>();
         Resync();
 
@@ -43,13 +45,13 @@ internal sealed class NotifyCollectionChangedContractTracker<T>
         }
         catch (Exception ex)
         {
-            Violations.Add($"{e.Action}: 通知の適用に失敗した: {ex.GetType().Name}: {ex.Message}");
+            Violations.Add($"{e.Action}: failed to apply the notification: {ex.GetType().Name}: {ex.Message}");
             return;
         }
 
         if (!shadow.SequenceEqual(target))
         {
-            Violations.Add($"{e.Action}: 通知から再構築した内容 [{Join(shadow)}] が実際の内容 [{Join(target)}] と一致しない");
+            Violations.Add($"{e.Action}: the content reconstructed from the notifications [{Join(shadow)}] does not match the actual content [{Join(target)}]");
         }
     }
 
@@ -60,8 +62,8 @@ internal sealed class NotifyCollectionChangedContractTracker<T>
             case NotifyCollectionChangedAction.Add:
                 InsertRange(e.NewStartingIndex, e.NewItems);
 
-                // WinUI 3 の ListView が IBindableVector.GetAt(index) で読むのと同じアクセス。
-                // 契約が守られていなければここで例外になる (issue #115 のクラッシュ地点)。
+                // The same access the WinUI 3 ListView makes through IBindableVector.GetAt(index).
+                // If the contract is broken, this throws (the crash site of issue #115).
                 for (var i = 0; i < e.NewItems.Count; i++)
                 {
                     _ = target[e.NewStartingIndex + i];
@@ -86,7 +88,7 @@ internal sealed class NotifyCollectionChangedContractTracker<T>
                 break;
 
             case NotifyCollectionChangedAction.Reset:
-                // Reset は「全部読み直せ」なので、実際のコレクションから再同期する。
+                // Reset means "reread everything", so resync from the actual collection.
                 Resync();
                 break;
         }

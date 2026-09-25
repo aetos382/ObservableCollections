@@ -5,8 +5,8 @@ using System.Threading;
 namespace ObservableCollections.Tests;
 
 /// <summary>
-/// 専用の SynchronizationContext を持つスレッド。UI スレッドの代替。
-/// Post された通知はそのスレッドのキューに溜まるだけで、Pump を呼ぶまで発火しない。
+/// A thread with its own SynchronizationContext. A stand-in for a UI thread.
+/// Posted notifications only pile up in that thread's queue and are not raised until Pump is called.
 /// </summary>
 internal sealed class TestUiThread : IDisposable
 {
@@ -42,7 +42,7 @@ internal sealed class TestUiThread : IDisposable
     }
 
     /// <summary>
-    /// このスレッド上で action を実行し、完了を待つ。
+    /// Executes the action on this thread and waits for it to complete.
     /// </summary>
     public void Invoke(Action action)
     {
@@ -69,12 +69,12 @@ internal sealed class TestUiThread : IDisposable
 
         if (error != null)
         {
-            throw new InvalidOperationException($"{thread.Name} で例外が発生した。", error);
+            throw new InvalidOperationException($"An exception occurred on {thread.Name}.", error);
         }
     }
 
     /// <summary>
-    /// メッセージ ループ相当。このスレッド上で溜まっている通知を順に発火する。
+    /// The equivalent of a message loop. Raises the notifications queued on this thread in order.
     /// </summary>
     public void Pump()
     {

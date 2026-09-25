@@ -4,8 +4,8 @@ using System.Threading;
 namespace ObservableCollections.Tests;
 
 /// <summary>
-/// UI スレッド (WinUI 3 の DispatcherQueue) の代替。
-/// Post されたコールバックはキューに溜まるだけで、Pump を呼ぶまで実行されない。
+/// A stand-in for a UI thread (the WinUI 3 DispatcherQueue).
+/// Posted callbacks only pile up in the queue and are not executed until Pump is called.
 /// </summary>
 internal sealed class QueuedSynchronizationContext : SynchronizationContext
 {
@@ -24,7 +24,7 @@ internal sealed class QueuedSynchronizationContext : SynchronizationContext
     public int PendingCount => queue.Count;
 
     /// <summary>
-    /// メッセージ ループ相当。溜まっているコールバックを順に実行する。
+    /// The equivalent of a message loop. Executes the queued callbacks in order.
     /// </summary>
     public void Pump()
     {

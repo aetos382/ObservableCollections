@@ -3,11 +3,12 @@ using System;
 namespace ObservableCollections.Tests;
 
 /// <summary>
-/// 書き込み可能ビューの位置ベース操作 (セッター、RemoveAt、Insert) は、View インデックスをソース
-/// インデックスへ逆引き (AlternateIndexList.GetAlternateIndex) してからソースに反映しなければならない。
+/// Position-based operations on a writable view (the setter, RemoveAt, and Insert) must translate the
+/// view index back to the source index (AlternateIndexList.GetAlternateIndex) before applying them to
+/// the source.
 ///
-/// T と TView を別の型にして、converter をスキップするショートカット
-/// (typeof(T) == typeof(TView)) と絡まないようにしている。
+/// T and TView are different types so that the shortcut that skips the converter
+/// (typeof(T) == typeof(TView)) does not interfere.
 /// </summary>
 public class WritableViewIndexTranslationTest
 {
@@ -30,7 +31,7 @@ public class WritableViewIndexTranslationTest
 
         using var bindable = view.ToWritableNotifyCollectionChanged(ToOriginal);
 
-        // View は ["$2", "$4"]。その [1] は "$4" なので、ソースからは 4 が消えるべき。
+        // The view is ["$2", "$4"]. Its [1] is "$4", so 4 should be removed from the source.
         bindable.RemoveAt(1);
 
         list.Should().Equal(new[] { 1, 2, 3 });
@@ -53,8 +54,8 @@ public class WritableViewIndexTranslationTest
 
         using var bindable = view.ToWritableNotifyCollectionChanged(ToOriginal);
 
-        // View は ["$2", "$4"]。その [1] の位置に入れたいので、
-        // ソースでは 4 (ソース インデックス 3) の直前に入るべき。
+        // The view is ["$2", "$4"]. We want to insert at its [1], so in the source
+        // it should go right before 4 (source index 3).
         bindable.Insert(1, "$6");
 
         list.Should().Equal(new[] { 1, 2, 3, 6, 4 });
@@ -66,8 +67,8 @@ public class WritableViewIndexTranslationTest
     }
 
     /// <summary>
-    /// 末尾への挿入はソース インデックスが決まらないので末尾追加として扱われる。
-    /// これは正当な操作なので、範囲外の拒否と混同してはならない。
+    /// An insertion at the tail has no corresponding source index, so it is treated as an append.
+    /// This is a legitimate operation and must not be confused with rejecting an out-of-range index.
     /// </summary>
     [Fact]
     public void InsertAtTail()
@@ -83,7 +84,7 @@ public class WritableViewIndexTranslationTest
 
         using var bindable = view.ToWritableNotifyCollectionChanged(ToOriginal);
 
-        // View は ["$2", "$4"]。その [2] は末尾。
+        // The view is ["$2", "$4"]. Its [2] is the tail.
         bindable.Insert(2, "$6");
 
         list.Should().Equal(new[] { 1, 2, 3, 4, 6 });
@@ -92,8 +93,9 @@ public class WritableViewIndexTranslationTest
     }
 
     /// <summary>
-    /// 範囲外のインデックスは ArgumentOutOfRangeException で拒否し、ソースを変更しないことを確認する。
-    /// 末尾追加へのフォールバックが範囲外まで飲み込んでしまっていた。
+    /// Verifies that an out-of-range index is rejected with ArgumentOutOfRangeException and leaves the
+    /// source unchanged.
+    /// The fallback to appending used to swallow out-of-range indices as well.
     /// </summary>
     [Fact]
     public void OutOfRangeIndexIsRejected()
@@ -109,7 +111,7 @@ public class WritableViewIndexTranslationTest
 
         using var bindable = view.ToWritableNotifyCollectionChanged(ToOriginal);
 
-        // View は ["$2", "$4"] なので Count は 2。
+        // The view is ["$2", "$4"], so Count is 2.
         bindable.Invoking(x => x.Insert(3, "$6")).Should().Throw<ArgumentOutOfRangeException>();
         bindable.Invoking(x => x.Insert(-1, "$6")).Should().Throw<ArgumentOutOfRangeException>();
         bindable.Invoking(x => x.RemoveAt(2)).Should().Throw<ArgumentOutOfRangeException>();
