@@ -156,4 +156,63 @@ public class WritableViewIndexTranslationTest
         list.Should().Equal(new[] { 1, 2, 3, 4 });
         bindable.Should().Equal(new[] { "$2", "$4" });
     }
+
+    /// <summary>
+    /// Verifies that the setter on a filtered view replaces the element the caller saw at the index, when the converter
+    /// rejects the source write and the filter changes while the converter runs.
+    /// A filter change does not take the lock of the source, so another thread can make it at that point; the converter
+    /// makes it here so that it surely happens there. The position translated before the converter was reused after it,
+    /// and the setter replaced the element that had moved into that position.
+    /// </summary>
+    [Fact]
+    public void RejectedSetWhileFilterChanges()
+    {
+        var list = new ObservableList<int>(new[] { 1, 2, 3, 4 });
+
+        using var view = list.CreateWritableView(x => $"${x}");
+        view.AttachFilter(x => x % 2 == 0);
+
+        using var bindable = view.ToWritableNotifyCollectionChanged((string newView, int original, ref bool setValue) =>
+        {
+            view.ResetFilter();
+            setValue = false;
+            return original;
+        });
+
+        // The view is ["$2", "$4"], so its [1] is 4. After the reset, 4 is at [3], and [1] is 2.
+        bindable[1] = "$40";
+
+        bindable.Should().Equal(new[] { "$1", "$2", "$3", "$40" });
+    }
+
+    /// <summary>
+    /// Verifies that the setter on a filtered view does not replace another element, when the converter rejects the
+    /// source write and the new filter that is attached while the converter runs excludes the target. The assigned view
+    /// must still be kept, and appear once the filter includes the element again.
+    /// See RejectedSetWhileFilterChanges for why the converter changes the filter.
+    /// </summary>
+    [Fact]
+    public void RejectedSetWhileFilterExcludesTarget()
+    {
+        var list = new ObservableList<int>(new[] { 1, 2, 3, 4 });
+
+        using var view = list.CreateWritableView(x => $"${x}");
+        view.AttachFilter(x => x % 2 == 0);
+
+        using var bindable = view.ToWritableNotifyCollectionChanged((string newView, int original, ref bool setValue) =>
+        {
+            view.AttachFilter(x => x % 2 == 1);
+            setValue = false;
+            return original;
+        });
+
+        // The view is ["$2", "$4"], so its [1] is 4. The new filter excludes 4, and puts 3 at [1].
+        bindable[1] = "$40";
+
+        bindable.Should().Equal(new[] { "$1", "$3" });
+
+        view.ResetFilter();
+
+        bindable.Should().Equal(new[] { "$1", "$2", "$3", "$40" });
+    }
 }

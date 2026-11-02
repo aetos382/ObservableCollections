@@ -513,12 +513,10 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
 
                 lock (sourceSyncRoot)
                 {
-                    int listViewIndex;
                     int originalIndex;
                     lock (gate)
                     {
-                        listViewIndex = ToListViewIndex(index, isInsertionPoint: false);
-                        originalIndex = listView.GetAlternateIndex(listViewIndex);
+                        originalIndex = listView.GetAlternateIndex(ToListViewIndex(index, isInsertionPoint: false));
                     }
 
                     var (originalValue, _) = writableView!.GetAt(originalIndex);
@@ -541,8 +539,12 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
                         writableView.SetViewAt(originalIndex, value);
                         lock (gate)
                         {
-                            var oldView = listView[listViewIndex];
-                            listView[listViewIndex] = value;
+                            // a filter change takes only the lock of the parent, so the converter or another thread may have
+                            // rebuilt listView since the index was translated. find the element again by its source index, which
+                            // cannot move while the lock of the source is held. if the new filter excludes it, nothing visible changes
+                            if (!listView.TryGetAtAlternateIndex(originalIndex, out var oldView)) return;
+
+                            listView.TrySetAtAlternateIndex(originalIndex, value, out var listViewIndex);
                             Publish(new CollectionEventDispatcherEventArgs(NotifyCollectionChangedAction.Replace, value, oldView, listViewIndex)
                             {
                                 Collection = this,
