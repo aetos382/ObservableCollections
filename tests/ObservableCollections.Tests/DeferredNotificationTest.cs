@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
@@ -765,6 +766,34 @@ public class DeferredNotificationTest
         destination = new string[notify.Count];
         notify.CopyTo(destination.AsSpan());
         destination.Should().Equal(new[] { "$1", "$2" });
+    }
+
+    /// <summary>
+    /// Verifies that IList.Add does not return the index of another element while the notification of the add is
+    /// pending. Count did not include the pending element, so Count - 1 pointed at the last visible element, and the
+    /// operations that take an index would have hit that element. The element is not visible yet, so -1 is returned.
+    /// Covers both implementations: the one created from a view (FiltableSynchronizedViewList) and the one created
+    /// from the list itself (NonFilteredSynchronizedViewList).
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IListAddDuringPendingNotification(bool viaNonFilteredList)
+    {
+        var dispatcher = new QueuedCollectionEventDispatcher();
+
+        var list = new ObservableList<int>(new[] { 1, 2 });
+        using var view = list.CreateWritableView(x => $"${x}");
+        using var notify = viaNonFilteredList
+            ? list.ToWritableNotifyCollectionChanged(x => $"${x}", ToOriginal, dispatcher)
+            : view.ToWritableNotifyCollectionChanged(ToOriginal, dispatcher);
+
+        notify.CollectionChanged += (_, _) => { };
+
+        // The visible content is ["$1", "$2"], and Count - 1 was 1, the index of "$2".
+        ((IList)notify).Add("$3").Should().Be(-1);
+
+        list.Should().Equal(new[] { 1, 2, 3 });
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 
 namespace ObservableCollections.Tests;
 
@@ -128,5 +129,31 @@ public class WritableViewIndexTranslationTest
         bindable.Invoking(x => x[-1] = "$6").Should().Throw<ArgumentOutOfRangeException>();
 
         list.Should().Equal(new[] { 1, 2, 3, 4 });
+    }
+
+    /// <summary>
+    /// Verifies that IList.Add on a filtered writable view returns -1 for an element that the filter excludes, and
+    /// the index in the view for one that it includes.
+    /// Count does not change for an excluded element, so Count - 1 used to return the index of another element.
+    /// </summary>
+    [Fact]
+    public void IListAddOfExcludedElement()
+    {
+        var list = new ObservableList<int>();
+        list.Add(1);
+        list.Add(2);
+
+        using var view = list.CreateWritableView(x => $"${x}");
+        view.AttachFilter(x => x % 2 == 0);
+
+        using var bindable = view.ToWritableNotifyCollectionChanged(ToOriginal);
+
+        // The view is ["$2"]. Count - 1 was 0, the index of "$2".
+        ((IList)bindable).Add("$3").Should().Be(-1);
+
+        ((IList)bindable).Add("$4").Should().Be(1);
+
+        list.Should().Equal(new[] { 1, 2, 3, 4 });
+        bindable.Should().Equal(new[] { "$2", "$4" });
     }
 }

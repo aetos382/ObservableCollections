@@ -1,5 +1,6 @@
 ﻿using ObservableCollections.Internal;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -10,7 +11,7 @@ using System.Runtime.InteropServices;
 
 namespace ObservableCollections;
 
-internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionChangedSynchronizedViewList<TView>
+internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionChangedSynchronizedViewList<TView>, IList
 {
     static readonly PropertyChangedEventArgs CountPropertyChangedEventArgs = new("Count");
     static readonly Action<NotifyCollectionChangedEventArgs> raiseChangedEventInvoke = RaiseChangedEvent;
@@ -602,6 +603,27 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
         }
     }
 
+    int IList.Add(object? value)
+    {
+        // the Count - 1 of the base is wrong when the filter excludes the element, or when the notification of the add is
+        // pending, since Count does not include it then. hold the lock of the source so that no other writer adds after it
+        lock (sourceSyncRoot)
+        {
+            Add((TView)value!);
+
+            var sourceIndex = parent.UnfilteredCount - 1;
+            lock (gate)
+            {
+                // the other operations take an index into the visible list. an index into listView would make them hit
+                // another element while the add is pending, so return -1 until it is visible
+                if (deferred != null && deferred.PendingCount != 0) return -1;
+
+                var last = listView.Count - 1;
+                return last >= 0 && listView.GetAlternateIndex(last) == sourceIndex ? last : -1;
+            }
+        }
+    }
+
     public override void Insert(int index, TView item)
     {
         if (IsReadOnly)
@@ -780,7 +802,7 @@ internal sealed class FiltableSynchronizedViewList<T, TView> : NotifyCollectionC
     }
 }
 
-internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollectionChangedSynchronizedViewList<TView>
+internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollectionChangedSynchronizedViewList<TView>, IList
 {
     static readonly PropertyChangedEventArgs CountPropertyChangedEventArgs = new("Count");
     static readonly Action<NotifyCollectionChangedEventArgs> raiseChangedEventInvoke = RaiseChangedEvent;
@@ -1359,6 +1381,25 @@ internal sealed class NonFilteredSynchronizedViewList<T, TView> : NotifyCollecti
 
             // always add
             writableView!.AddToSourceCollection(newOriginal);
+        }
+    }
+
+    int IList.Add(object? value)
+    {
+        // the Count - 1 of the base is wrong when the notification of the add is pending, since Count does not include it
+        // then. hold the lock of the source so that no other writer adds after it
+        lock (sourceSyncRoot)
+        {
+            Add((TView)value!);
+
+            lock (gate)
+            {
+                // the other operations take an index into the visible list. an index into listView would make them hit
+                // another element while the add is pending, so return -1 until it is visible
+                if (deferred != null && deferred.PendingCount != 0) return -1;
+
+                return listView.Count - 1;
+            }
         }
     }
 

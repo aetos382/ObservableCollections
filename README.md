@@ -447,6 +447,8 @@ public class Person
 }
 ```
 
+The writable list takes and returns indexes into its own content, which does not include the changes whose notifications are still pending in the `ICollectionEventDispatcher`. So `IList.Add` returns -1 when the added element is not in that content yet, as well as when the filter of the view excludes it.
+
 Unity
 ---
 In Unity projects, you can installing `ObservableCollections` with [NugetForUnity](https://github.com/GlitchEnzo/NuGetForUnity). If R3 integration is required, similarly install `ObservableCollections.R3` via NuGetForUnity.
